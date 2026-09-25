@@ -63,4 +63,33 @@ export class Trigger {
     }
     return this.action === other.action;
   }
+
+  /**
+   * Validates the trigger domain object.
+   *
+   * @throws {TriggerValidationError} if the event is empty or the optional
+   *   action is provided but empty.
+   */
+  validate(): void {
+    if (this.event === '') {
+      throw new TriggerValidationError(
+        'The trigger event must be a non-empty string.'
+      );
+    }
+    if (this.action !== undefined && this.action === '') {
+      throw new TriggerValidationError(
+        'The trigger action must be a non-empty string when provided.'
+      );
+    }
+  }
+}
+
+/**
+ * Error thrown when a Trigger is invalid.
+ */
+export class TriggerValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TriggerValidationError';
+  }
 }

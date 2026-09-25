@@ -16,7 +16,8 @@
  * @fileoverview Public exports for shared Oppiabot type definitions.
  */
 
-export { RepositoryContext } from './repository';
+export { RepositoryContext, RepositoryContextValidationError }
+  from './repository';
 export {
   ConfigSchema,
   ConfigSchemaProperty,

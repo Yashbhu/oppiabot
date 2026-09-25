@@ -14,7 +14,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Trigger } from '../../src/core';
+import { Trigger, TriggerValidationError } from '../../src/core';
 
 describe('Trigger', () => {
   describe('toKey', () => {
@@ -57,6 +57,34 @@ describe('Trigger', () => {
       const registered = new Trigger('pull_request', 'opened');
       const incoming = new Trigger('issues', 'opened');
       assert.strictEqual(registered.matches(incoming), false);
+    });
+  });
+
+  describe('validate', () => {
+    it('accepts a trigger with an event and an action', () => {
+      const trigger = new Trigger('pull_request', 'opened');
+      assert.doesNotThrow(() => trigger.validate());
+    });
+
+    it('accepts a trigger with an event but no action', () => {
+      const trigger = new Trigger('schedule');
+      assert.doesNotThrow(() => trigger.validate());
+    });
+
+    it('rejects a trigger with an empty event', () => {
+      const trigger = new Trigger('');
+      assert.throws(
+        () => trigger.validate(),
+        (err: Error) => err instanceof TriggerValidationError
+      );
+    });
+
+    it('rejects a trigger with an empty action', () => {
+      const trigger = new Trigger('pull_request', '');
+      assert.throws(
+        () => trigger.validate(),
+        (err: Error) => err instanceof TriggerValidationError
+      );
     });
   });
 });

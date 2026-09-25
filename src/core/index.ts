@@ -17,7 +17,7 @@
  * Framework.
  */
 
-export { Trigger } from './trigger';
+export { Trigger, TriggerValidationError } from './trigger';
 export { ExecutionContext, ExecutionContextValidationError }
   from './execution_context';
 export {

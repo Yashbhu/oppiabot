@@ -63,19 +63,34 @@ export class ExecutionContext {
    *   invalid.
    */
   validate(): void {
-    if (
-      this.trigger === undefined ||
-      this.trigger === null ||
-      this.trigger.event === undefined ||
-      this.trigger.event === ''
-    ) {
+    if (this.trigger === undefined || this.trigger === null) {
       throw new ExecutionContextValidationError(
         'The execution context must contain a structurally valid trigger.'
+      );
+    }
+    try {
+      this.trigger.validate();
+    } catch (error) {
+      const errorMessage = (
+        error instanceof Error ? error.message : String(error)
+      );
+      throw new ExecutionContextValidationError(
+        'The execution context contains an invalid trigger: ' + errorMessage
       );
     }
     if (this.repository === undefined || this.repository === null) {
       throw new ExecutionContextValidationError(
         'The execution context must contain repository information.'
+      );
+    }
+    try {
+      this.repository.validate();
+    } catch (error) {
+      const errorMessage = (
+        error instanceof Error ? error.message : String(error)
+      );
+      throw new ExecutionContextValidationError(
+        'The execution context contains an invalid repository: ' + errorMessage
       );
     }
   }

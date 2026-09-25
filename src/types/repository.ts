@@ -37,4 +37,39 @@ export class RepositoryContext {
   getFullName(): string {
     return `${this.owner}/${this.name}`;
   }
+
+  /**
+   * Validates the repository context domain object.
+   *
+   * @throws {RepositoryContextValidationError} if the owner, name, or default
+   *   branch is empty.
+   */
+  validate(): void {
+    const invalidFields: string[] = [];
+    if (this.owner === '') {
+      invalidFields.push('owner');
+    }
+    if (this.name === '') {
+      invalidFields.push('name');
+    }
+    if (this.default_branch === '') {
+      invalidFields.push('default_branch');
+    }
+    if (invalidFields.length > 0) {
+      throw new RepositoryContextValidationError(
+        'The repository context contains empty fields: ' +
+        invalidFields.join(', ') + '.'
+      );
+    }
+  }
+}
+
+/**
+ * Error thrown when a RepositoryContext is invalid.
+ */
+export class RepositoryContextValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RepositoryContextValidationError';
+  }
 }
