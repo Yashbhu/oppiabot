@@ -1,123 +1,131 @@
-import {ExecutionContext} from './execution_context';
-import {Trigger} from './trigger';
-import {ConfigSchema} from '../types/configSchema';
+// Copyright 2026 The Oppia Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 /**
- * PluginAction domain object.
- *
- * Represents a GitHub operation performed by a plugin. These values are
- * target-domain abstractions of operations required by the existing workflows;
- * they do not imply that the legacy implementations used the same enum names.
+ * @fileoverview Oppiabot plugin contract and registration metadata.
  */
-export interface PluginAction {
-  /**
-   * The type of GitHub operation performed (for example adding a comment,
-   * adding or removing a label, or assigning a reviewer).
-   */
-  readonly type: string;
 
-  /**
-   * Operation-specific payload, if any.
-   */
-  readonly payload?: Record<string, unknown>;
+import { Trigger } from './trigger';
+import { ConfigSchema } from '../types/repository_configuration';
+import { ExecutionContext } from './execution_context';
+
+/**
+ * Represents the GitHub operations performed by plugins.
+ *
+ * These values are target-domain abstractions of operations required by the
+ * existing workflows; they do not imply that the legacy implementations used
+ * the same enum names.
+ */
+export enum PluginAction {
+  /** Post a comment on the relevant GitHub resource. */
+  COMMENT = 'COMMENT',
+  /** Apply a label to a GitHub resource. */
+  LABEL = 'LABEL',
+  /** Close a pull request or issue. */
+  CLOSE = 'CLOSE',
+  /** Set or update a commit status. */
+  STATUS = 'STATUS',
+  /** Assign a GitHub user. */
+  ASSIGN = 'ASSIGN',
+  /** Remove a label from a GitHub resource. */
+  REMOVE_LABEL = 'REMOVE_LABEL',
+  /** Request a review from a GitHub user. */
+  REQUEST_REVIEW = 'REQUEST_REVIEW',
 }
 
 /**
- * PluginResult domain object.
- *
  * Represents the outcome of plugin execution returned by an Oppiabot plugin
  * after processing an execution context.
  */
 export interface PluginResult {
-  /**
-   * GitHub operations performed during execution.
-   */
-  readonly actions: readonly PluginAction[];
-
-  /**
-   * Human-readable explanation of the plugin execution result.
-   */
-  readonly message: string;
-
-  /**
-   * Indicates whether plugin execution completed successfully.
-   */
-  readonly success: boolean;
+  /** GitHub operations performed during execution. */
+  actions: PluginAction[];
+  /** Human-readable explanation of the plugin execution result. */
+  message: string;
+  /** Whether plugin execution completed successfully. */
+  success: boolean;
 }
 
 /**
- * PluginRegistrationMetadata domain object.
- *
- * The registration information a plugin provides so the Plugin Registry can
- * store it and the Core Engine can resolve and execute it. Each registration
- * provides the plugin name, supported triggers, configuration schema, and
- * execution handler.
+ * Represents the registration information provided by a plugin to the Plugin
+ * Registry during application initialization.
  */
 export interface PluginRegistrationMetadata {
+  /** Unique identifier of the plugin. */
+  name: string;
   /**
-   * Unique identifier of the plugin.
+   * Execution triggers supported by the plugin. The cadence of scheduled
+   * executions is defined by the GitHub Actions workflow cron configuration
+   * rather than plugin metadata; supportedTriggers identifies which scheduled
+   * execution a plugin supports.
    */
-  readonly name: string;
-
-  /**
-   * The triggers this plugin supports. A plugin may support both webhook
-   * events and scheduled executions.
-   */
-  readonly supportedTriggers: readonly Trigger[];
-
-  /**
-   * Schema definition used to validate plugin-specific configuration.
-   */
-  readonly configSchema: ConfigSchema;
-
-  /**
-   * The plugin's execution handler, invoked by the Core Engine with the
-   * normalized execution context.
-   */
-  readonly execute: (context: ExecutionContext) => Promise<PluginResult>;
+  supportedTriggers: Trigger[];
+  /** Schema definition used to validate plugin-specific configuration. */
+  configSchema: ConfigSchema;
 }
 
 /**
- * OppiabotPlugin domain object.
+ * Represents an isolated workflow implementation that can be executed by the
+ * Core Engine for supported execution triggers, including GitHub events and
+ * scheduled executions.
  *
- * The common contract that all Oppiabot plugins implement. The Core Engine
- * requires a consistent way to initialize and execute independent plugins
- * defined under src/plugins, so every plugin exposes its registration
- * metadata and a single execution handler through this contract.
- *
- * Each plugin exposes a single execution handler through the common plugin
- * contract, allowing plugins to support both webhook-driven and scheduled
- * execution through the same interface.
+ * New Oppiabot workflows are implemented as independent plugins implementing
+ * this contract, allowing workflow logic to evolve without modifying the Core
+ * Engine. Plugins are explicitly registered with the Plugin Registry during
+ * application initialization.
  */
-export interface OppiabotPlugin {
+export interface OppiabotPlugin extends PluginRegistrationMetadata {
   /**
-   * Unique identifier of the plugin.
-   */
-  readonly name: string;
-
-  /**
-   * The triggers this plugin supports. The cadence of scheduled executions is
-   * defined by the GitHub Actions workflow cron configuration rather than by
-   * plugin metadata.
-   */
-  readonly supportedTriggers: readonly Trigger[];
-
-  /**
-   * Schema definition used to validate plugin-specific configuration.
-   */
-  readonly configSchema: ConfigSchema;
-
-  /**
-   * Executes workflow-specific plugin logic for the current execution
-   * context.
+   * Executes workflow-specific plugin logic for the given execution context.
    *
-   * @param context - The normalized execution context. Contains the trigger
-   *   that caused the execution and, for webhook-driven executions, the
-   *   GitHub event information.
-   * @returns The result of the plugin execution, describing the actions
-   *   performed, a message, and the execution status.
-   * @throws Error if required plugin configuration is missing or invalid, or
-   *   if plugin execution fails.
+   * @param {ExecutionContext} context - Contains GitHub event information,
+   *   repository details, configuration, and runtime execution state.
+   * @returns {Promise<PluginResult>} Result of the plugin execution describing
+   *   the actions performed, message, and execution status.
+   * @throws {PluginConfigurationError} if required plugin configuration is
+   *   missing or invalid.
+   * @throws {PluginExecutionError} if plugin execution fails.
    */
   execute(context: ExecutionContext): Promise<PluginResult>;
+}
+
+/**
+ * Error thrown when a plugin cannot be resolved by the Plugin Registry.
+ */
+export class PluginResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PluginResolutionError';
+  }
+}
+
+/**
+ * Error thrown when required plugin configuration is missing or invalid.
+ */
+export class PluginConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PluginConfigurationError';
+  }
+}
+
+/**
+ * Error thrown when plugin execution fails.
+ */
+export class PluginExecutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PluginExecutionError';
+  }
 }

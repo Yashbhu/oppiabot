@@ -1,6 +1,5 @@
 node_modules
 npm-debug.log
-dist
 *.pem
 .env
 .idea
@@ -9,4 +8,5 @@ newrelic_agent.log
 coverage
 .vscode
 .prettierrc
+dist
 *.pem:Zone.Identifier

@@ -1,78 +1,113 @@
-import {PluginRegistrationMetadata} from './plugin';
+// Copyright 2026 The Oppia Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS-IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 /**
- * Error thrown when a plugin registration is invalid (for example when a
- * plugin is registered more than once).
+ * @fileoverview Plugin registration and resolution.
  */
-export class PluginRegistrationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'PluginRegistrationError';
-  }
-}
+
+import { OppiabotPlugin, PluginResolutionError }
+  from './plugin';
+import { PluginRegistrationMetadata } from './plugin';
+import { Trigger } from './trigger';
 
 /**
- * PluginRegistry domain object.
+ * Maintains the list of available Oppiabot plugins and resolves the plugins
+ * applicable to a given execution.
  *
- * Maintains the list of available Oppiabot plugins. Plugins are explicitly
- * registered during application initialization; each registration provides
- * the plugin metadata (name, supported triggers, configuration schema, and
- * execution handler). The registry stores these registrations so the Core
- * Engine can look plugins up.
- *
- * Trigger-based plugin resolution is introduced in a later milestone; this
- * registry only provides registration and lookup.
+ * Plugins are explicitly registered with the registry during application
+ * initialization. Each registration provides the plugin metadata, supported
+ * trigger keys, configuration schema, and execution handler.
  */
 export class PluginRegistry {
-  private readonly registrationsByName: Map<string, PluginRegistrationMetadata> =
-    new Map();
+  private readonly pluginsByName: Map<string, OppiabotPlugin>;
+
+  constructor() {
+    this.pluginsByName = new Map<string, OppiabotPlugin>();
+  }
 
   /**
-   * Registers a plugin in the registry.
+   * Registers a plugin with the registry.
    *
-   * @param plugin - The plugin to register.
-   * @throws PluginRegistrationError if a plugin with the same name is already
+   * @param {OppiabotPlugin} plugin - The plugin to register.
+   * @throws {PluginResolutionError} if a plugin with the same name is already
    *   registered.
    */
-  register(plugin: PluginRegistrationMetadata): void {
-    if (this.registrationsByName.has(plugin.name)) {
-      throw new PluginRegistrationError(
-        `Plugin ${plugin.name} is already registered.`
+  register(plugin: OppiabotPlugin): void {
+    if (this.pluginsByName.has(plugin.name)) {
+      throw new PluginResolutionError(
+        `A plugin named '${plugin.name}' is already registered.`
       );
     }
-    this.registrationsByName.set(plugin.name, plugin);
+    this.pluginsByName.set(plugin.name, plugin);
   }
 
   /**
-   * Returns the registration for the plugin with the given name, or undefined
-   * if no such plugin is registered.
+   * Returns the registration metadata of a registered plugin.
    *
-   * @param name - Unique identifier of the plugin.
+   * @param {string} name - Name of the plugin.
+   * @returns {PluginRegistrationMetadata | undefined} The plugin registration
+   *   metadata, or undefined if no plugin with the given name is registered.
    */
   getRegistration(name: string): PluginRegistrationMetadata | undefined {
-    return this.registrationsByName.get(name);
+    const plugin = this.pluginsByName.get(name);
+    if (plugin === undefined) {
+      return undefined;
+    }
+    return this.toRegistrationMetadata(plugin);
   }
 
   /**
-   * Returns a snapshot of all registered plugin registrations.
-   */
-  getAllRegistrations(): readonly PluginRegistrationMetadata[] {
-    return Array.from(this.registrationsByName.values());
-  }
-
-  /**
-   * Returns whether a plugin with the given name is registered.
+   * Returns all registered plugins.
    *
-   * @param name - Unique identifier of the plugin.
+   * @returns {OppiabotPlugin[]} All registered plugins.
    */
-  isRegistered(name: string): boolean {
-    return this.registrationsByName.has(name);
+  getAllPlugins(): OppiabotPlugin[] {
+    return Array.from(this.pluginsByName.values());
   }
 
   /**
-   * Returns the number of registered plugins.
+   * Resolves the registered plugins whose supported triggers match the given
+   * trigger.
+   *
+   * A registered trigger with an explicitly specified action matches only the
+   * corresponding event and action. A registered trigger without an action
+   * matches all actions for the specified event.
+   *
+   * @param {Trigger} trigger - The trigger received by the Core Engine.
+   * @returns {OppiabotPlugin[]} The plugins applicable to the trigger.
    */
-  size(): number {
-    return this.registrationsByName.size;
+  resolvePlugins(trigger: Trigger): OppiabotPlugin[] {
+    return this.getAllPlugins().filter(
+      (plugin) => plugin.supportedTriggers.some(
+        (supportedTrigger) => supportedTrigger.matches(trigger)
+      )
+    );
+  }
+
+  /**
+   * Converts a plugin into its registration metadata representation.
+   *
+   * @param {OppiabotPlugin} plugin - The plugin to convert.
+   * @returns {PluginRegistrationMetadata} The plugin registration metadata.
+   */
+  private toRegistrationMetadata(
+    plugin: OppiabotPlugin
+  ): PluginRegistrationMetadata {
+    return {
+      name: plugin.name,
+      supportedTriggers: plugin.supportedTriggers,
+      configSchema: plugin.configSchema,
+    };
   }
 }
