@@ -45,7 +45,10 @@ describe('ExecutionContext', () => {
         undefined as unknown as Trigger;
       assert.throws(
         () => context.validate(),
-        (err: Error) => err instanceof ExecutionContextValidationError
+        (err: Error) => (
+          err instanceof ExecutionContextValidationError &&
+          err.message.includes('structurally valid trigger')
+        )
       );
     });
 
@@ -53,7 +56,11 @@ describe('ExecutionContext', () => {
       const context = createExecutionContext(new Trigger(''));
       assert.throws(
         () => context.validate(),
-        (err: Error) => err instanceof ExecutionContextValidationError
+        (err: Error) => (
+          err instanceof ExecutionContextValidationError &&
+          err.message.includes('invalid trigger') &&
+          err.message.includes('non-empty')
+        )
       );
     });
 
@@ -61,7 +68,11 @@ describe('ExecutionContext', () => {
       const context = createExecutionContext(new Trigger('pull_request', ''));
       assert.throws(
         () => context.validate(),
-        (err: Error) => err instanceof ExecutionContextValidationError
+        (err: Error) => (
+          err instanceof ExecutionContextValidationError &&
+          err.message.includes('invalid trigger') &&
+          err.message.includes('non-empty')
+        )
       );
     });
 
@@ -77,7 +88,10 @@ describe('ExecutionContext', () => {
       );
       assert.throws(
         () => context.validate(),
-        (err: Error) => err instanceof ExecutionContextValidationError
+        (err: Error) => (
+          err instanceof ExecutionContextValidationError &&
+          err.message.includes('repository information')
+        )
       );
     });
 
@@ -88,7 +102,11 @@ describe('ExecutionContext', () => {
       );
       assert.throws(
         () => context.validate(),
-        (err: Error) => err instanceof ExecutionContextValidationError
+        (err: Error) => (
+          err instanceof ExecutionContextValidationError &&
+          err.message.includes('invalid repository') &&
+          err.message.includes('owner')
+        )
       );
     });
   });

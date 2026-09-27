@@ -75,7 +75,10 @@ describe('Trigger', () => {
       const trigger = new Trigger('');
       assert.throws(
         () => trigger.validate(),
-        (err: Error) => err instanceof TriggerValidationError
+        (err: Error) => (
+          err instanceof TriggerValidationError &&
+          err.message.includes('non-empty')
+        )
       );
     });
 
@@ -83,7 +86,10 @@ describe('Trigger', () => {
       const trigger = new Trigger('pull_request', '');
       assert.throws(
         () => trigger.validate(),
-        (err: Error) => err instanceof TriggerValidationError
+        (err: Error) => (
+          err instanceof TriggerValidationError &&
+          err.message.includes('non-empty')
+        )
       );
     });
   });

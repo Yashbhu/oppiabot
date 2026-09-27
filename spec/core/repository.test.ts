@@ -37,7 +37,10 @@ describe('RepositoryContext', () => {
       const repository = new RepositoryContext('', 'oppiabot', 'develop');
       assert.throws(
         () => repository.validate(),
-        (err: Error) => err instanceof RepositoryContextValidationError
+        (err: Error) => (
+          err instanceof RepositoryContextValidationError &&
+          err.message.includes('owner')
+        )
       );
     });
 
@@ -45,7 +48,10 @@ describe('RepositoryContext', () => {
       const repository = new RepositoryContext('oppia', '', 'develop');
       assert.throws(
         () => repository.validate(),
-        (err: Error) => err instanceof RepositoryContextValidationError
+        (err: Error) => (
+          err instanceof RepositoryContextValidationError &&
+          err.message.includes('name')
+        )
       );
     });
 
@@ -53,7 +59,10 @@ describe('RepositoryContext', () => {
       const repository = new RepositoryContext('oppia', 'oppiabot', '');
       assert.throws(
         () => repository.validate(),
-        (err: Error) => err instanceof RepositoryContextValidationError
+        (err: Error) => (
+          err instanceof RepositoryContextValidationError &&
+          err.message.includes('default_branch')
+        )
       );
     });
 
