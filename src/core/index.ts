@@ -29,5 +29,9 @@ export {
   PluginResolutionError,
   PluginResult
 } from './plugin';
+export {
+  PluginResultValidationError,
+  validatePluginResult
+} from './pluginResult';
 export { PluginRegistry } from './pluginRegistry';
 export { CoreEngine } from './engine';
