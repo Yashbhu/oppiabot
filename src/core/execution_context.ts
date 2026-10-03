@@ -93,6 +93,19 @@ export class ExecutionContext {
         'The execution context contains an invalid repository: ' + errorMessage
       );
     }
+    if (this.configuration !== undefined && this.configuration !== null) {
+      try {
+        this.configuration.validate();
+      } catch (error) {
+        const errorMessage = (
+          error instanceof Error ? error.message : String(error)
+        );
+        throw new ExecutionContextValidationError(
+          'The execution context contains an invalid configuration: ' +
+          errorMessage
+        );
+      }
+    }
   }
 }
 

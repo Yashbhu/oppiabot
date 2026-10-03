@@ -15,6 +15,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ConfigSchema,
+  ConfigurationValidationError,
+  PluginConfiguration,
+  RepositoryConfiguration,
   RepositoryContext,
   RepositoryContextValidationError
 } from '../../src/types';
@@ -77,6 +81,162 @@ describe('RepositoryContext', () => {
           err.message.includes('default_branch')
         )
       );
+    });
+  });
+});
+describe('RepositoryConfiguration', () => {
+  const createConfiguration = (
+    version: string,
+    plugins: Record<string, PluginConfiguration>
+  ): RepositoryConfiguration => new RepositoryConfiguration(version, plugins);
+
+  const createPluginConfiguration = (
+    enabled: boolean,
+    settings: Record<string, unknown> = {}
+  ): PluginConfiguration => ({
+    enabled: enabled,
+    dry_run: false,
+    settings: settings
+  });
+
+  describe('getPluginConfiguration', () => {
+    it('returns the configuration for a configured plugin', () => {
+      const pluginConfiguration = createPluginConfiguration(true);
+      const configuration = createConfiguration('1.0', {
+        stale: pluginConfiguration
+      });
+      assert.strictEqual(
+        configuration.getPluginConfiguration('stale'),
+        pluginConfiguration
+      );
+    });
+
+    it('returns undefined for a plugin that is not configured', () => {
+      const configuration = createConfiguration('1.0', {});
+      assert.strictEqual(
+        configuration.getPluginConfiguration('stale'),
+        undefined
+      );
+    });
+  });
+
+  describe('validate', () => {
+    it('accepts a configuration with a version and no plugins', () => {
+      createConfiguration('1.0', {}).validate();
+    });
+
+    it('rejects a configuration with an empty version', () => {
+      assert.throws(
+        () => createConfiguration('', {}).validate(),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /must define a version/);
+          return true;
+        }
+      );
+    });
+
+    it('accepts an enabled plugin with well-formed settings', () => {
+      createConfiguration('1.0', {
+        stale: createPluginConfiguration(true, {stale_days: 30})
+      }).validate();
+    });
+
+    it('rejects a plugin whose enabled flag is not a boolean', () => {
+      assert.throws(
+        () => createConfiguration('1.0', {
+          stale: {
+            enabled: 'yes',
+            dry_run: false,
+            settings: {}
+          } as unknown as PluginConfiguration
+        }).validate(),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /boolean enabled field/);
+          return true;
+        }
+      );
+    });
+
+    it('rejects a plugin whose dry_run flag is not a boolean', () => {
+      assert.throws(
+        () => createConfiguration('1.0', {
+          stale: {
+            enabled: true,
+            dry_run: 1,
+            settings: {}
+          } as unknown as PluginConfiguration
+        }).validate(),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /boolean dry_run field/);
+          return true;
+        }
+      );
+    });
+
+    it('rejects a plugin whose settings are not an object', () => {
+      assert.throws(
+        () => createConfiguration('1.0', {
+          stale: {
+            enabled: true,
+            dry_run: false,
+            settings: null
+          }
+        } as unknown as Record<string, PluginConfiguration>).validate(),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /settings object/);
+          return true;
+        }
+      );
+    });
+
+    it('validates enabled plugin settings against the plugin schema', () => {
+      const configSchema = new ConfigSchema(
+        {stale_days: {type: 'number'}},
+        ['stale_days']
+      );
+      assert.throws(
+        () => createConfiguration('1.0', {
+          stale: createPluginConfiguration(true, {stale_days: 'thirty'})
+        }).validate({stale: configSchema}),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /plugin stale is invalid/);
+          return true;
+        }
+      );
+    });
+
+    it('rejects an enabled plugin missing a required setting', () => {
+      const configSchema = new ConfigSchema(
+        {stale_days: {type: 'number'}},
+        ['stale_days']
+      );
+      assert.throws(
+        () => createConfiguration('1.0', {
+          stale: createPluginConfiguration(true)
+        }).validate({stale: configSchema}),
+        ConfigurationValidationError
+      );
+    });
+
+    it('does not apply the plugin schema to a disabled plugin', () => {
+      const configSchema = new ConfigSchema(
+        {stale_days: {type: 'number'}},
+        ['stale_days']
+      );
+      createConfiguration('1.0', {
+        stale: createPluginConfiguration(false)
+      }).validate({stale: configSchema});
+    });
+
+    it('validates a plugin with no registered schema structurally only', () => {
+      createConfiguration('1.0', {
+        unknownPlugin: createPluginConfiguration(true, {anything: 'goes'})
+      }).validate();
     });
   });
 });
