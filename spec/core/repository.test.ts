@@ -111,11 +111,62 @@ describe('RepositoryConfiguration', () => {
       );
     });
 
-    it('returns undefined for a plugin that is not configured', () => {
+    it('rejects a plugin that is not configured', () => {
       const configuration = createConfiguration('1.0', {});
+      assert.throws(
+        () => configuration.getPluginConfiguration('stale'),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /plugin stale is not configured/);
+          return true;
+        }
+      );
+    });
+
+    it('rejects a plugin whose configuration violates the plugin schema', () => {
+      const configSchema = new ConfigSchema(
+        {stale_days: {type: 'number'}},
+        ['stale_days']
+      );
+      const configuration = createConfiguration('1.0', {
+        stale: createPluginConfiguration(true, {stale_days: 'thirty'})
+      });
+      assert.throws(
+        () => configuration.getPluginConfiguration('stale', {
+          stale: configSchema
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /plugin stale is invalid/);
+          return true;
+        }
+      );
+    });
+
+    it('applies the plugin schema even when the plugin is disabled', () => {
+      const configSchema = new ConfigSchema(
+        {stale_days: {type: 'number'}},
+        ['stale_days']
+      );
+      const configuration = createConfiguration('1.0', {
+        stale: createPluginConfiguration(false, {stale_days: 'thirty'})
+      });
+      assert.throws(
+        () => configuration.getPluginConfiguration('stale', {
+          stale: configSchema
+        }),
+        ConfigurationValidationError
+      );
+    });
+
+    it('returns the configuration for a disabled plugin', () => {
+      const pluginConfiguration = createPluginConfiguration(false);
+      const configuration = createConfiguration('1.0', {
+        stale: pluginConfiguration
+      });
       assert.strictEqual(
         configuration.getPluginConfiguration('stale'),
-        undefined
+        pluginConfiguration
       );
     });
   });

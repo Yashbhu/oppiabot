@@ -233,13 +233,32 @@ export class RepositoryConfiguration {
    * Returns the configuration associated with a specific plugin.
    *
    * @param {string} pluginName - Name of the plugin.
-   * @returns {PluginConfiguration | undefined} Configuration associated with
-   *   the requested plugin, or undefined if the plugin is not configured.
+   * @param {Record<string, ConfigSchema>} pluginConfigSchemas - Maps a plugin
+   *   name to the ConfigSchema declared by that plugin. The configuration
+   *   loader passes these so that plugin-specific rules are enforced.
+   * @returns {PluginConfiguration} Configuration associated with the requested
+   *   plugin.
+   * @throws {ConfigurationValidationError} if the plugin is not configured, or
+   *   if the plugin configuration does not satisfy the plugin's configuration
+   *   schema.
    */
   getPluginConfiguration(
-    pluginName: string
-  ): PluginConfiguration | undefined {
-    return this.plugins[pluginName];
+    pluginName: string,
+    pluginConfigSchemas: Record<string, ConfigSchema> = {}
+  ): PluginConfiguration {
+    const pluginConfiguration = this.plugins[pluginName];
+    if (pluginConfiguration === undefined) {
+      throw new ConfigurationValidationError(
+        `The plugin ${pluginName} is not configured in this repository.`
+      );
+    }
+    this.validatePluginStructure(pluginName, pluginConfiguration);
+    this.validatePluginSettings(
+      pluginName,
+      pluginConfiguration,
+      pluginConfigSchemas[pluginName]
+    );
+    return pluginConfiguration;
   }
 }
 
