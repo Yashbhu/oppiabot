@@ -135,12 +135,16 @@ export class RepositoryConfiguration {
    *
    * @param {Record<string, ConfigSchema>} pluginConfigSchemas - Maps a plugin
    *   name to the ConfigSchema declared by that plugin. The configuration
-   *   loader passes these so that plugin-specific rules are enforced.
+   *   loader passes these so that plugin-specific rules are enforced. Defaults
+   *   to an empty null-prototype dictionary, so that a plugin named after an
+   *   Object property does not resolve to an inherited value.
    * @throws {ConfigurationValidationError} if the version is empty, if a
    *   plugin configuration is structurally invalid, or if an enabled plugin's
    *   configuration does not satisfy the expected plugin configuration schema.
    */
-  validate(pluginConfigSchemas: Record<string, ConfigSchema> = {}): void {
+  validate(
+    pluginConfigSchemas: Record<string, ConfigSchema> = Object.create(null)
+  ): void {
     if (this.version === '') {
       throw new ConfigurationValidationError(
         'The repository configuration must define a version.'
@@ -235,7 +239,9 @@ export class RepositoryConfiguration {
    * @param {string} pluginName - Name of the plugin.
    * @param {Record<string, ConfigSchema>} pluginConfigSchemas - Maps a plugin
    *   name to the ConfigSchema declared by that plugin. The configuration
-   *   loader passes these so that plugin-specific rules are enforced.
+   *   loader passes these so that plugin-specific rules are enforced. Defaults
+   *   to an empty null-prototype dictionary, so that a plugin named after an
+   *   Object property does not resolve to an inherited value.
    * @returns {PluginConfiguration} Configuration associated with the requested
    *   plugin.
    * @throws {ConfigurationValidationError} if the plugin is not configured, or
@@ -244,7 +250,7 @@ export class RepositoryConfiguration {
    */
   getPluginConfiguration(
     pluginName: string,
-    pluginConfigSchemas: Record<string, ConfigSchema> = {}
+    pluginConfigSchemas: Record<string, ConfigSchema> = Object.create(null)
   ): PluginConfiguration {
     const pluginConfiguration = this.plugins[pluginName];
     if (pluginConfiguration === undefined) {

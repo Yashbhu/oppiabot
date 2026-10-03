@@ -123,6 +123,20 @@ describe('RepositoryConfiguration', () => {
       );
     });
 
+    it('does not resolve an inherited Object property as a plugin schema', () => {
+      const pluginConfiguration = createPluginConfiguration(true, {
+        stale_days: 'thirty'
+      });
+      const configuration = createConfiguration('1.0', {
+        constructor: pluginConfiguration
+      });
+
+      assert.strictEqual(
+        configuration.getPluginConfiguration('constructor'),
+        pluginConfiguration
+      );
+    });
+
     it('rejects a plugin whose configuration violates the plugin schema', () => {
       const configSchema = new ConfigSchema(
         {stale_days: {type: 'number'}},
@@ -174,6 +188,12 @@ describe('RepositoryConfiguration', () => {
   describe('validate', () => {
     it('accepts a configuration with a version and no plugins', () => {
       createConfiguration('1.0', {}).validate();
+    });
+
+    it('does not resolve an inherited Object property as a plugin schema', () => {
+      createConfiguration('1.0', {
+        constructor: createPluginConfiguration(true, {stale_days: 'thirty'})
+      }).validate();
     });
 
     it('rejects a configuration with an empty version', () => {
