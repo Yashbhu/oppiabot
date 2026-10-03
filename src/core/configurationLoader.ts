@@ -191,11 +191,17 @@ export class ConfigurationLoader {
     contents: string | undefined
   ): RepositoryConfiguration {
     if (contents === undefined) {
-      return new RepositoryConfiguration(DEFAULT_CONFIGURATION_VERSION, {});
+      return new RepositoryConfiguration(
+        DEFAULT_CONFIGURATION_VERSION,
+        Object.create(null)
+      );
     }
     const document = this.parseYamlDocument(contents);
     if (document === undefined || document === null) {
-      return new RepositoryConfiguration(DEFAULT_CONFIGURATION_VERSION, {});
+      return new RepositoryConfiguration(
+        DEFAULT_CONFIGURATION_VERSION,
+        Object.create(null)
+      );
     }
     if (!this.isMapping(document)) {
       throw new ConfigurationValidationError(
@@ -314,7 +320,8 @@ export class ConfigurationLoader {
         'names to plugin configuration.'
       );
     }
-    const configurations: Record<string, PluginConfiguration> = {};
+    const configurations: Record<string, PluginConfiguration> =
+      Object.create(null);
     for (const [pluginName, pluginConfiguration] of Object.entries(
       plugins as Record<string, unknown>
     )) {
@@ -430,7 +437,10 @@ export class ConfigurationLoader {
    *   schemas, keyed by plugin name.
    */
   private collectPluginConfigSchemas(): Record<string, ConfigSchema> {
-    const schemas: Record<string, ConfigSchema> = {};
+    // Null-prototype dictionaries, because plugin names come from repository
+    // configuration. A name such as constructor or __proto__ must resolve to a
+    // declared schema or to nothing, never to an inherited Object property.
+    const schemas: Record<string, ConfigSchema> = Object.create(null);
     for (const plugin of this.pluginRegistry.getAllPlugins()) {
       schemas[plugin.name] = plugin.configSchema;
     }

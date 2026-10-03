@@ -183,7 +183,7 @@ describe('ConfigurationLoader', () => {
       const configuration = await loader.load(REPOSITORY);
 
       assert.strictEqual(configuration.version, DEFAULT_CONFIGURATION_VERSION);
-      assert.deepStrictEqual(configuration.plugins, {});
+      assert.deepStrictEqual(Object.assign({}, configuration.plugins), {});
     });
 
     it('resolves to a configuration with no enabled plugins for an empty ' +
@@ -191,7 +191,7 @@ describe('ConfigurationLoader', () => {
       const configuration = await createLoader('').load(REPOSITORY);
 
       assert.strictEqual(configuration.version, DEFAULT_CONFIGURATION_VERSION);
-      assert.deepStrictEqual(configuration.plugins, {});
+      assert.deepStrictEqual(Object.assign({}, configuration.plugins), {});
     });
 
     it('applies the default version when the configuration omits it', async () => {
@@ -283,7 +283,7 @@ describe('ConfigurationLoader', () => {
         'plugins:\n  not-yet-registered:\n    enabled: true'
       ).load(REPOSITORY);
 
-      assert.deepStrictEqual(configuration.plugins, {
+      assert.deepStrictEqual(Object.assign({}, configuration.plugins), {
         'not-yet-registered': {
           enabled: true,
           dry_run: false,
@@ -423,7 +423,9 @@ describe('ConfigurationLoader', () => {
         /must define a settings object/
       );
     });
+  });
 
+  describe('explicit null fields', () => {
     it('rejects an explicit null version instead of applying the default',
       async () => {
         await assert.rejects(
@@ -497,7 +499,7 @@ describe('ConfigurationLoader', () => {
         );
 
         assert.strictEqual(configuration.version, DEFAULT_CONFIGURATION_VERSION);
-        assert.deepStrictEqual(configuration.plugins, {});
+        assert.deepStrictEqual(Object.assign({}, configuration.plugins), {});
       });
   });
 
@@ -555,6 +557,44 @@ describe('ConfigurationLoader', () => {
         settings: { stale_days: 'thirty' }
       });
     });
+
+    it('does not resolve an inherited Object property as a plugin schema',
+      async () => {
+        const configuration = await createLoader(
+          'plugins:\n  constructor:\n    enabled: true'
+        ).load(REPOSITORY);
+
+        assert.deepStrictEqual(Object.keys(configuration.plugins), [
+          'constructor'
+        ]);
+        assert.deepStrictEqual(configuration.plugins.constructor, {
+          enabled: true,
+          dry_run: false,
+          settings: {}
+        });
+      });
+
+    it('keeps a plugin named __proto__ as a real configuration key',
+      async () => {
+        const configuration = await createLoader(
+          'plugins:\n  __proto__:\n    enabled: true'
+        ).load(REPOSITORY);
+
+        assert.deepStrictEqual(Object.keys(configuration.plugins), [
+          '__proto__'
+        ]);
+        assert.ok(
+          Object.prototype.hasOwnProperty.call(
+            configuration.plugins,
+            '__proto__'
+          )
+        );
+        assert.deepStrictEqual(configuration.plugins.__proto__, {
+          enabled: true,
+          dry_run: false,
+          settings: {}
+        });
+      });
 
     it('validates the shape of an unregistered plugin configuration', async () => {
       await assert.rejects(
