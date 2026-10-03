@@ -281,7 +281,7 @@ export class ConfigurationLoader {
    *   non-empty string.
    */
   private toVersion(version: unknown): string {
-    if (version === undefined || version === null) {
+    if (version === undefined) {
       return DEFAULT_CONFIGURATION_VERSION;
     }
     if (typeof version !== 'string' || version.trim() === '') {
@@ -305,7 +305,7 @@ export class ConfigurationLoader {
   private toPluginConfigurations(
     plugins: unknown
   ): Record<string, PluginConfiguration> {
-    if (plugins === undefined || plugins === null) {
+    if (plugins === undefined) {
       return {};
     }
     if (!this.isMapping(plugins)) {
@@ -385,7 +385,7 @@ export class ConfigurationLoader {
    *   boolean.
    */
   private toDryRunFlag(pluginName: string, dryRun: unknown): boolean {
-    if (dryRun === undefined || dryRun === null) {
+    if (dryRun === undefined) {
       return false;
     }
     if (typeof dryRun !== 'boolean') {
@@ -411,7 +411,7 @@ export class ConfigurationLoader {
     pluginName: string,
     settings: unknown
   ): Record<string, unknown> {
-    if (settings === undefined || settings === null) {
+    if (settings === undefined) {
       return {};
     }
     if (!this.isMapping(settings)) {

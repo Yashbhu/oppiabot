@@ -423,6 +423,82 @@ describe('ConfigurationLoader', () => {
         /must define a settings object/
       );
     });
+
+    it('rejects an explicit null version instead of applying the default',
+      async () => {
+        await assert.rejects(
+          () => createLoader('version:').load(REPOSITORY),
+          (error: Error) => {
+            assert.ok(error instanceof ConfigurationValidationError);
+            assert.match(error.message, /must define version as a non-empty/);
+            return true;
+          }
+        );
+      });
+
+    it('rejects an explicit null plugins field instead of applying the ' +
+      'default', async () => {
+      await assert.rejects(
+        () => createLoader('version: \'1.0\'\nplugins:').load(REPOSITORY),
+        (error: Error) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /must define plugins as a mapping/);
+          return true;
+        }
+      );
+    });
+
+    it('rejects an explicit null dry_run field instead of applying the ' +
+      'default', async () => {
+      await assert.rejects(
+        () => createLoader(
+          'plugins:\n  stale:\n    enabled: true\n    dry_run:'
+        ).load(REPOSITORY),
+        (error: Error) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /must define a boolean dry_run field/);
+          return true;
+        }
+      );
+    });
+
+    it('rejects an explicit null settings field instead of applying the ' +
+      'default', async () => {
+      await assert.rejects(
+        () => createLoader(
+          'plugins:\n  stale:\n    enabled: true\n    settings:'
+        ).load(REPOSITORY),
+        (error: Error) => {
+          assert.ok(error instanceof ConfigurationValidationError);
+          assert.match(error.message, /must define a settings object/);
+          return true;
+        }
+      );
+    });
+
+    it('still applies the documented defaults when the fields are omitted',
+      async () => {
+        const configuration = await createLoader(
+          'plugins:\n  stale:\n    enabled: true'
+        ).load(REPOSITORY);
+
+        assert.strictEqual(configuration.version, DEFAULT_CONFIGURATION_VERSION);
+        assert.deepStrictEqual(configuration.getPluginConfiguration('stale'), {
+          enabled: true,
+          dry_run: false,
+          settings: {}
+        });
+      });
+
+    it('loads an empty plugins mapping rather than treating it as null',
+      async () => {
+        const configuration = await createLoader('plugins: {}').load(
+          REPOSITORY
+        );
+
+        assert.strictEqual(configuration.version, DEFAULT_CONFIGURATION_VERSION);
+        assert.deepStrictEqual(configuration.plugins, {});
+      });
   });
 
   describe('plugin configuration validation', () => {
