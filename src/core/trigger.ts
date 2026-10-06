@@ -17,24 +17,40 @@
  */
 
 /**
- * Represents the event that caused an Oppiabot execution.
+ * The event that caused an Oppiabot execution.
  *
- * Runtime-specific entrypoints normalize platform events into this common
- * representation before invoking the Core Engine.
+ * A webhook entrypoint builds one from the event and action names GitHub sent
+ * with the delivery; a scheduled entrypoint builds one from its workflow's
+ * schedule name. The entrypoint passes it to `CoreEngine.execute`, which uses
+ * it to decide which registered plugins run.
  */
 export class Trigger {
   constructor(
-    /** Canonical execution event. */
+    /**
+     * The event name, without an action: 'pull_request' for a
+     * `pull_request.opened` delivery, 'issues' for `issues.assigned`, or
+     * 'schedule' for a scheduled run. Pass the name the platform reported;
+     * there is nothing to normalize first.
+     */
     public readonly event: string,
-    /** Optional action/subtype associated with the event. */
+    /**
+     * The action or subtype of the event: 'opened' for `pull_request.opened`,
+     * or the scheduled job's name such as 'stale-sweep' when `event` is
+     * 'schedule'. Leave it undefined for events that carry no action, which
+     * makes this trigger match every action for `event`.
+     */
     public readonly action?: string
   ) {}
 
   /**
-   * Produces the exact canonical key for the trigger.
+   * Returns the key that identifies this trigger.
    *
-   * @returns {string} The canonical trigger key. Example: "pull_request.opened"
-   *   or "schedule.stale-sweep".
+   * The key is `event` when this trigger has no action, and `event.action`
+   * otherwise. Callers use it to report which trigger a plugin supports and to
+   * compare two triggers by name.
+   *
+   * @returns {string} For example 'pull_request.opened', 'issues', or
+   *   'schedule.stale-sweep'.
    */
   toKey(): string {
     if (this.action === undefined) {
