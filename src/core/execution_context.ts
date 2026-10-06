@@ -82,13 +82,15 @@ export class ExecutionContext {
   /**
    * Checks that this execution context can be executed.
    *
-   * Verifies that `trigger` is present and that `trigger.event` is present and
-   * not the empty string, and that `repository` is present. `payload`,
-   * `configuration`, and `deliveryId` are not checked here; `configuration` in
-   * particular has not been loaded yet when an entrypoint builds the context.
+   * Requires `trigger` and `repository` to be present and to satisfy their own
+   * `validate()` methods, and checks `configuration` too when one is provided.
+   * `configuration` may be absent, because an entrypoint does not have to load
+   * it before building the context. `payload` and `deliveryId` carry no
+   * constraints here, so they are not inspected.
    *
    * @throws {ExecutionContextValidationError} naming the first field that
-   *   fails, or returns without throwing if every required field is present.
+   *   fails, with that field's own validation message appended. Returns
+   *   without throwing if every check passes.
    */
   validate(): void {
     if (this.trigger === undefined || this.trigger === null) {
