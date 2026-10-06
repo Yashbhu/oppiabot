@@ -47,7 +47,7 @@ describe('ExecutionContext', () => {
         () => context.validate(),
         (err: Error) => (
           err instanceof ExecutionContextValidationError &&
-          err.message.includes('structurally valid trigger')
+          err.message.includes('must define a trigger')
         )
       );
     });
@@ -90,7 +90,7 @@ describe('ExecutionContext', () => {
         () => context.validate(),
         (err: Error) => (
           err instanceof ExecutionContextValidationError &&
-          err.message.includes('repository information')
+          err.message.includes('must define repository')
         )
       );
     });
