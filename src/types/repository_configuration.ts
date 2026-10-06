@@ -34,7 +34,10 @@ export interface ConfigSchemaProperty {
 export class ConfigSchema {
   constructor(
     /**
-     * Defines the supported configuration fields and their validation rules.
+     * The supported configuration fields and their validation rules, keyed by
+     * field name. Each entry is the rule for one field: its expected type and,
+     * when the field accepts only a fixed set of values, that set. See
+     * `ConfigSchemaProperty` for the rule's shape.
      */
     public readonly properties: Record<string, unknown>,
     /**
