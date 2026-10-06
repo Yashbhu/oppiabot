@@ -113,6 +113,28 @@ describe('CoreEngine', () => {
     assert.strictEqual(results[1].success, true);
   });
 
+  it('preserves the stack trace of a failed plugin execution', async () => {
+    const registry = new PluginRegistry();
+    registry.register(createStubPlugin(
+      'stack-plugin',
+      [new Trigger('pull_request', 'opened')],
+      async () => {
+        throw new Error('boom');
+      }
+    ));
+
+    const engine = new CoreEngine(registry);
+    const results = await engine.execute(
+      createExecutionContext(new Trigger('pull_request', 'opened'))
+    );
+
+    assert.strictEqual(results.length, 1);
+    assert.strictEqual(results[0].success, false);
+    assert.match(results[0].message, /stack-plugin/);
+    assert.match(results[0].message, /Error: boom/);
+    assert.match(results[0].message, /at .*engine\.test/);
+  });
+
   it('rejects an invalid execution context', async () => {
     const registry = new PluginRegistry();
     const engine = new CoreEngine(registry);

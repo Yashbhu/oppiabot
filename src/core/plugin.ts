@@ -21,11 +21,15 @@ import { ConfigSchema } from '../types/repository_configuration';
 import { ExecutionContext } from './execution_context';
 
 /**
- * Represents the GitHub operations performed by plugins.
+ * The GitHub operations a plugin performed while handling an execution.
  *
- * These values are target-domain abstractions of operations required by the
- * existing workflows; they do not imply that the legacy implementations used
- * the same enum names.
+ * A plugin reports what it did by returning these values in
+ * `PluginResult.actions`, so a run can be described as a list of concrete
+ * GitHub changes instead of free text.
+ *
+ * The names are chosen for the operations the existing Oppiabot workflows
+ * perform. They are not taken from the legacy implementation, which called the
+ * same operations by different names.
  */
 export enum PluginAction {
   /** Post a comment on the relevant GitHub resource. */
