@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ChangedFile,
@@ -21,7 +21,8 @@ import {
   Issue,
   OppiabotGitHubClient,
   OppiabotGitHubClientError,
-  PullRequest
+  PullRequest,
+  PullRequestReview
 } from '../../src/core/oppiabot_github_client';
 import { RepositoryContext } from '../../src/types';
 
@@ -42,6 +43,12 @@ class FakeGitHubApiClient implements GitHubApiClient {
   /** Response returned for the listIssues route, keyed by page number. */
   readonly issuesByPage: Map<number, Issue[]> = new Map();
 
+  /** Response returned for the listPullRequests route, keyed by page number. */
+  readonly pullRequestsByPage: Map<number, PullRequest[]> = new Map();
+
+  /** Response returned for the list-reviews route, keyed by page number. */
+  readonly reviewsByPage: Map<number, PullRequestReview[]> = new Map();
+
   async request<TData>(
     route: string,
     parameters: Record<string, unknown>
@@ -51,6 +58,22 @@ class FakeGitHubApiClient implements GitHubApiClient {
       return {
         status: 200,
         data: this.changedFilesByPage.get(Number(parameters.page)) || []
+      } as GitHubApiResponse<TData>;
+    }
+    if (route === 'GET /repos/{owner}/{repo}/pulls') {
+      const page = Number(parameters.page);
+      return {
+        status: 200,
+        data: this.pullRequestsByPage.get(page) ||
+          (page === 1 ? [createPullRequest(101), createPullRequest(102)] : [])
+      } as GitHubApiResponse<TData>;
+    }
+    if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews') {
+      const page = Number(parameters.page);
+      return {
+        status: 200,
+        data: this.reviewsByPage.get(page) ||
+          (page === 1 ? [createReview()] : [])
       } as GitHubApiResponse<TData>;
     }
     if (route === 'GET /repos/{owner}/{repo}/issues') {
@@ -78,23 +101,27 @@ class FakeGitHubApiClient implements GitHubApiClient {
     switch (route) {
       case 'GET /repos/{owner}/{repo}/pulls/{pull_number}':
         return createPullRequest(Number(parameters.pull_number));
-      case 'GET /repos/{owner}/{repo}/pulls':
-        return [createPullRequest(101), createPullRequest(102)];
-      case 'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews':
-        return [{state: 'APPROVED', user: {login: 'reviewer'}}];
       case 'GET /repos/{owner}/{repo}/issues/{issue_number}':
         return createIssue(Number(parameters.issue_number));
-      case 'GET /repos/{owner}/{repo}/issues':
-        return [createIssue(1), createIssue(2)];
       case 'GET /search/issues':
         return {total_count: 1, items: [{number: 7, title: 'A pull request'}]};
       case 'GET /repos/{owner}/{repo}/commits/{ref}':
         return {
           sha: String(parameters.ref),
+          author: {login: 'octocat'},
+          committer: null,
           commit: {
             message: 'A commit message',
-            author: {date: '2026-10-01'},
-            committer: {date: '2026-10-02'}
+            author: {
+              name: 'Octo Cat',
+              email: 'octocat@example.com',
+              date: '2026-10-01'
+            },
+            committer: {
+              name: 'Octo Cat',
+              email: 'octocat@example.com',
+              date: '2026-10-02'
+            }
           }
         };
       default:
@@ -126,12 +153,23 @@ function createPullRequest(number: number): PullRequest {
     body: 'A pull request body',
     draft: false,
     merged: false,
+    user: {login: 'author'},
+    mergeable: true,
     labels: [{name: 'bug'}],
     assignees: [{login: 'assignee'}],
     requested_reviewers: [{login: 'reviewer'}],
     head: {sha: 'abc123'},
     base: {ref: 'develop'}
   };
+}
+
+/**
+ * Creates a pull request review for use in tests.
+ *
+ * @returns {PullRequestReview} The review under test.
+ */
+function createReview(): PullRequestReview {
+  return {state: 'APPROVED', user: {login: 'reviewer'}};
 }
 
 /**
@@ -168,6 +206,43 @@ function createClient(): {
   return {client, api};
 }
 
+/**
+ * Creates a Dry-Run client backed by a fake GitHub API client.
+ *
+ * @returns {Object} The client and its fake, for assertions.
+ */
+function createDryRunClient(): {
+  client: OppiabotGitHubClient;
+  api: FakeGitHubApiClient;
+} {
+  const api = new FakeGitHubApiClient();
+  const client = new OppiabotGitHubClient(
+    api,
+    new RepositoryContext('oppia', 'oppiabot', 'develop'),
+    {dryRun: true}
+  );
+  return {client, api};
+}
+
+/**
+ * Captures console.log output for the duration of one test.
+ *
+ * @returns {object} The captured `logs` array and a `restore` callback.
+ */
+function captureLogs(): {logs: string[]; restore: () => void} {
+  const logs: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map((arg) => String(arg)).join(' '));
+  };
+  return {
+    logs: logs,
+    restore: () => {
+      console.log = original;
+    }
+  };
+}
+
 describe('OppiabotGitHubClient', () => {
   describe('getRepository', () => {
     it('returns the repository the client operates on', () => {
@@ -181,6 +256,8 @@ describe('OppiabotGitHubClient', () => {
       const {client, api} = createClient();
       const pullRequest = await client.getPullRequest(42);
       assert.strictEqual(pullRequest.number, 42);
+      assert.strictEqual(pullRequest.user?.login, 'author');
+      assert.strictEqual(pullRequest.mergeable, true);
       assert.deepStrictEqual(api.getLastParameters(), {
         owner: 'oppia',
         repo: 'oppiabot',
@@ -201,6 +278,21 @@ describe('OppiabotGitHubClient', () => {
       assert.strictEqual(api.getLastParameters().state, 'closed');
     });
 
+    it('requests every pull request page when a page is full', async () => {
+      const {client, api} = createClient();
+      api.pullRequestsByPage.set(1, Array.from(
+        {length: 100},
+        (_value, index) => createPullRequest(index + 1)
+      ));
+      api.pullRequestsByPage.set(2, [createPullRequest(101)]);
+      const pullRequests = await client.listPullRequests();
+      assert.strictEqual(pullRequests.length, 101);
+      assert.deepStrictEqual(
+        api.requests.map((request) => request.parameters.page),
+        [1, 2]
+      );
+    });
+
     it('lists the reviews on a pull request', async () => {
       const {client, api} = createClient();
       const reviews = await client.listPullRequestReviews(42);
@@ -208,6 +300,21 @@ describe('OppiabotGitHubClient', () => {
       assert.deepStrictEqual(reviews, [
         {state: 'APPROVED', user: {login: 'reviewer'}}
       ]);
+    });
+
+    it('requests every review page when a page is full', async () => {
+      const {client, api} = createClient();
+      api.reviewsByPage.set(1, Array.from(
+        {length: 100},
+        (_value, index) => ({state: 'COMMENTED', user: {login: `user-${index}`}})
+      ));
+      api.reviewsByPage.set(2, [createReview()]);
+      const reviews = await client.listPullRequestReviews(42);
+      assert.strictEqual(reviews.length, 101);
+      assert.deepStrictEqual(
+        api.requests.map((request) => request.parameters.page),
+        [1, 2]
+      );
     });
 
     it('retrieves an issue scoped to the repository', async () => {
@@ -270,10 +377,21 @@ describe('OppiabotGitHubClient', () => {
       assert.strictEqual(commit.commit.message, 'A commit message');
     });
 
-    it('exposes the author date of a commit', async () => {
+    it('exposes the author metadata recorded in a commit', async () => {
       const {client} = createClient();
       const commit = await client.getCommit('abc123');
-      assert.strictEqual(commit.commit.author?.date, '2026-10-01');
+      assert.deepStrictEqual(commit.commit.author, {
+        name: 'Octo Cat',
+        email: 'octocat@example.com',
+        date: '2026-10-01'
+      });
+    });
+
+    it('exposes the GitHub accounts associated with a commit', async () => {
+      const {client} = createClient();
+      const commit = await client.getCommit('abc123');
+      assert.deepStrictEqual(commit.author, {login: 'octocat'});
+      assert.strictEqual(commit.committer, null);
     });
 
     it('sends each read operation to its GitHub REST route', async () => {
@@ -297,7 +415,7 @@ describe('OppiabotGitHubClient', () => {
       );
     });
 
-    it('exposes pull requests returned by the issues endpoint', async () => {
+    it('excludes pull requests from the listed issues', async () => {
       const {client, api} = createClient();
       api.request = async <TData>() => ({
         status: 200,
@@ -310,9 +428,8 @@ describe('OppiabotGitHubClient', () => {
         ] as unknown as TData
       });
       const issues = await client.listIssues();
-      assert.strictEqual(issues.length, 2);
-      assert.ok(issues[1].pull_request);
-      assert.strictEqual(issues[0].pull_request, undefined);
+      assert.strictEqual(issues.length, 1);
+      assert.strictEqual(issues[0].number, 1);
     });
 
     it('wraps a failed read request in a client error', async () => {
@@ -476,6 +593,139 @@ describe('OppiabotGitHubClient', () => {
           err instanceof OppiabotGitHubClientError &&
           err.message.includes('Validation Failed')
         )
+      );
+    });
+  });
+
+  describe('Dry-Run', () => {
+    let dryRunLogs: string[];
+    let restoreLogs: () => void;
+
+    beforeEach(() => {
+      const captured = captureLogs();
+      dryRunLogs = captured.logs;
+      restoreLogs = captured.restore;
+    });
+
+    afterEach(() => {
+      restoreLogs();
+    });
+
+    it('executes live by default and records nothing', () => {
+      const {client} = createClient();
+      assert.strictEqual(client.isDryRun(), false);
+      assert.deepStrictEqual(client.getRecordedMutations(), []);
+    });
+
+    it('records an intended mutation without sending it', async () => {
+      const {client, api} = createDryRunClient();
+      const status = await client.createComment(7, 'A comment');
+      assert.strictEqual(client.isDryRun(), true);
+      assert.strictEqual(status, 200);
+      assert.deepStrictEqual(api.requests, []);
+      assert.deepStrictEqual(client.getRecordedMutations(), [{
+        route: 'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
+        parameters: {
+          owner: 'oppia',
+          repo: 'oppiabot',
+          issue_number: 7,
+          body: 'A comment'
+        }
+      }]);
+    });
+
+    it('records every kind of mutation in execution order', async () => {
+      const {client, api} = createDryRunClient();
+      await client.createComment(7, 'A comment');
+      await client.addLabels(7, ['bug']);
+      await client.removeLabel(7, 'bug');
+      await client.addAssignees(7, ['reviewer']);
+      await client.removeAssignees(7, ['reviewer']);
+      await client.closeIssue(7);
+      assert.deepStrictEqual(
+        client.getRecordedMutations().map((mutation) => mutation.route),
+        [
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/labels',
+          'DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}',
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/assignees',
+          'DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees',
+          'PATCH /repos/{owner}/{repo}/issues/{issue_number}'
+        ]
+      );
+      assert.deepStrictEqual(api.requests, []);
+    });
+
+    it('logs each intended mutation', async () => {
+      const {client} = createDryRunClient();
+      await client.addLabels(7, ['bug']);
+      assert.strictEqual(dryRunLogs.length, 1);
+      assert.match(dryRunLogs[0], /\[OppiabotGitHubClient\] Dry-Run:/);
+      assert.match(
+        dryRunLogs[0],
+        /POST \/repos\/\{owner\}\/\{repo\}\/issues\/\{issue_number\}\/labels/
+      );
+      assert.match(dryRunLogs[0], /"labels":\["bug"\]/);
+    });
+
+    it('still reads repository state from GitHub', async () => {
+      const {client, api} = createDryRunClient();
+      const pullRequest = await client.getPullRequest(42);
+      assert.strictEqual(pullRequest.number, 42);
+      assert.deepStrictEqual(
+        api.requests.map((request) => request.route),
+        ['GET /repos/{owner}/{repo}/pulls/{pull_number}']
+      );
+    });
+
+    it('returns a copy of the recorded mutations', async () => {
+      const {client} = createDryRunClient();
+      await client.addLabels(7, ['bug']);
+      const recorded = client.getRecordedMutations() as
+        Array<{route: string; parameters: Record<string, unknown>}>;
+      recorded.pop();
+      assert.strictEqual(client.getRecordedMutations().length, 1);
+    });
+
+    it('creates an independent Dry-Run client', async () => {
+      const {client, api} = createClient();
+      const dryRunClient = client.asDryRun();
+      assert.strictEqual(client.isDryRun(), false);
+      assert.strictEqual(dryRunClient.isDryRun(), true);
+      assert.deepStrictEqual(
+        dryRunClient.getRepository().getFullName(),
+        'oppia/oppiabot'
+      );
+
+      await dryRunClient.addLabels(7, ['bug']);
+      assert.strictEqual(dryRunClient.getRecordedMutations().length, 1);
+      assert.deepStrictEqual(client.getRecordedMutations(), []);
+      assert.deepStrictEqual(api.requests, []);
+    });
+
+    it('keeps a Dry-Run client in Dry-Run mode', () => {
+      const {client} = createDryRunClient();
+      assert.strictEqual(client.asDryRun().isDryRun(), true);
+    });
+
+    it('records parameter values independently of the caller', async () => {
+      const {client} = createDryRunClient();
+      const labels = ['bug'];
+      await client.addLabels(7, labels);
+      labels.push('urgent');
+      assert.deepStrictEqual(
+        client.getRecordedMutations()[0].parameters.labels,
+        ['bug']
+      );
+
+      const recorded = client.getRecordedMutations() as Array<{
+        route: string;
+        parameters: Record<string, unknown>;
+      }>;
+      (recorded[0].parameters.labels as string[]).push('changed');
+      assert.deepStrictEqual(
+        client.getRecordedMutations()[0].parameters.labels,
+        ['bug']
       );
     });
   });

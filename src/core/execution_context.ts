@@ -17,6 +17,7 @@
  */
 
 import { Trigger } from './trigger';
+import type { OppiabotGitHubClient } from './oppiabot_github_client';
 import { RepositoryContext } from '../types/repository';
 import { RepositoryConfiguration } from
   '../types/repository_configuration';
@@ -39,9 +40,10 @@ export type RuntimeEventPayload = Record<string, unknown>;
  * The input to a single Oppiabot execution.
  *
  * An entrypoint constructs exactly one of these per triggered run and passes
- * it to `CoreEngine.execute()`, which passes the same instance to every plugin
- * it resolves. The fields are readonly, but the objects they reference are not
- * frozen; treat them as read-only and do not mutate them.
+ * it to `CoreEngine.execute()`. The engine passes that instance to each plugin
+ * it resolves, or a copy carrying a plugin-specific GitHub client. The fields
+ * are readonly, but the objects they reference are not frozen; treat them as
+ * read-only and do not mutate them.
  */
 export class ExecutionContext {
   constructor(
@@ -65,6 +67,16 @@ export class ExecutionContext {
      */
     public readonly configuration?: RepositoryConfiguration,
     /**
+     * The GitHub API abstraction plugins use for repository operations, or
+     * `undefined` when the entrypoint did not provide one. Plugins that
+     * perform GitHub operations must handle `undefined`.
+     *
+     * The Core Engine gives each plugin a client whose Dry-Run mode reflects
+     * that plugin's `dry_run` configuration, so a plugin must use this client
+     * rather than constructing its own.
+     */
+    public readonly githubClient?: OppiabotGitHubClient,
+    /**
      * The GitHub webhook delivery ID, or `undefined` for a scheduled run. Use
      * it to correlate a run with the delivery that started it.
      */
@@ -72,11 +84,35 @@ export class ExecutionContext {
   ) {}
 
   /**
+   * Returns a copy of this context with `githubClient` in place of the current
+   * client.
+   *
+   * The Core Engine uses this to give a plugin a client configured for its
+   * Dry-Run mode without changing the context supplied by the entrypoint or the
+   * context another plugin received. All other fields are carried over
+   * unchanged.
+   *
+   * @param {OppiabotGitHubClient} githubClient - The client for the copy.
+   * @returns {ExecutionContext} A copy with the supplied GitHub client.
+   */
+  withGitHubClient(githubClient: OppiabotGitHubClient): ExecutionContext {
+    return new ExecutionContext(
+      this.trigger,
+      this.payload,
+      this.repository,
+      this.configuration,
+      githubClient,
+      this.deliveryId
+    );
+  }
+
+  /**
    * Validates that this context is ready to execute.
    *
    * Requires `trigger` and `repository` to be present and to pass their own
    * `validate()`, and, when `configuration` is present, requires it to pass
-   * `configuration.validate()`. `payload` and `deliveryId` are not checked.
+   * `configuration.validate()`. `payload`, `githubClient`, and `deliveryId`
+   * are not checked.
    *
    * @throws {ExecutionContextValidationError} if `trigger` or `repository` is
    *   `undefined` or `null`, or fails its own `validate()`, or if

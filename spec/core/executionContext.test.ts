@@ -17,8 +17,13 @@ import assert from 'node:assert/strict';
 import {
   ExecutionContext,
   ExecutionContextValidationError,
+  OppiabotGitHubClient,
   Trigger
 } from '../../src/core';
+import {
+  GitHubApiClient,
+  GitHubApiResponse
+} from '../../src/core/oppiabot_github_client';
 import {
   PluginConfiguration,
   RepositoryConfiguration,
@@ -159,6 +164,41 @@ describe('ExecutionContext', () => {
           err.message.includes('stale')
         )
       );
+    });
+  });
+
+  describe('withGitHubClient', () => {
+    it('copies every field and replaces only the client', () => {
+      const repository = new RepositoryContext('oppia', 'oppiabot', 'develop');
+      const configuration = new RepositoryConfiguration('1.0', {});
+      const api: GitHubApiClient = {
+        async request<TData>(
+          _route: string,
+          _parameters: Record<string, unknown>
+        ): Promise<GitHubApiResponse<TData>> {
+          return {status: 200, data: {} as TData};
+        }
+      };
+      const originalClient = new OppiabotGitHubClient(api, repository);
+      const replacement = originalClient.asDryRun();
+      const context = new ExecutionContext(
+        new Trigger('pull_request', 'opened'),
+        {action: 'opened'},
+        repository,
+        configuration,
+        originalClient,
+        'delivery-1'
+      );
+
+      const copy = context.withGitHubClient(replacement);
+
+      assert.notStrictEqual(copy, context);
+      assert.strictEqual(copy.trigger, context.trigger);
+      assert.deepStrictEqual(copy.payload, context.payload);
+      assert.strictEqual(copy.repository, context.repository);
+      assert.strictEqual(copy.configuration, context.configuration);
+      assert.strictEqual(copy.githubClient, replacement);
+      assert.strictEqual(copy.deliveryId, 'delivery-1');
     });
   });
 });

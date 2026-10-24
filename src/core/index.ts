@@ -40,5 +40,7 @@ export {
 } from './configurationLoader';
 export {
   OppiabotGitHubClient,
-  OppiabotGitHubClientError
+  OppiabotGitHubClientError,
+  OppiabotGitHubClientOptions,
+  RecordedGitHubMutation
 } from './oppiabot_github_client';

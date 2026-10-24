@@ -54,7 +54,10 @@ export function createRepositoryConfiguration(
 export function createExecutionContext(
   trigger: Trigger,
   overrides: Partial<
-    Pick<ExecutionContext, 'payload' | 'repository' | 'configuration'>
+    Pick<
+      ExecutionContext,
+      'payload' | 'repository' | 'configuration' | 'githubClient' | 'deliveryId'
+    >
   > = {}
 ): ExecutionContext {
   const repository = overrides.repository || (
@@ -67,6 +70,8 @@ export function createExecutionContext(
     trigger,
     overrides.payload || {},
     repository,
-    configuration
+    configuration,
+    overrides.githubClient,
+    overrides.deliveryId
   );
 }
