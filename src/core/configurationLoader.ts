@@ -87,9 +87,9 @@ export interface RepositoryFileReader {
  * Loads the repository-specific Oppiabot configuration.
  *
  * The configuration is read from .github/oppiabot.yml on the repository's
- * default branch. The ref is always taken from the RepositoryContext and is
- * never taken from the incoming event payload, so that a pull request cannot
- * change the configuration that Oppiabot applies to it.
+ * default branch, using RepositoryContext.default_branch rather than the
+ * pull request's head or target branch. This prevents a pull request from
+ * selecting a configuration file from its own branch.
  *
  * The loader performs no caching: every load call reads and parses the file
  * again. Whether a configuration change is visible to subsequent calls also
