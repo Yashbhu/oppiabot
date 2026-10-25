@@ -70,3 +70,24 @@ export function createExecutionContext(
     configuration
   );
 }
+
+/**
+ * Waits until a condition holds, polling with a short delay.
+ *
+ * @param {() => boolean} condition - The condition to wait for.
+ * @param {number} [timeoutMs] - Maximum time to wait, in milliseconds.
+ * @returns {Promise<void>} Resolves once the condition holds.
+ * @throws {Error} if the condition is still false at the timeout.
+ */
+export async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 2000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error('Timed out waiting for the condition to hold.');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
