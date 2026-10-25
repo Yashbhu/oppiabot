@@ -26,13 +26,15 @@ import { PluginRegistry } from './pluginRegistry';
  *
  * A webhook handler or a scheduled workflow builds an `ExecutionContext` and
  * passes it to `execute()`. The engine validates the context, asks the plugin
- * registry for the plugins that match the trigger and are enabled by the
- * repository configuration, executes them, and reports their results. The
- * engine coordinates execution; it does not return a result summary to its
- * caller.
+ * registry for the registered plugins that both match the context's trigger
+ * and are enabled by the repository configuration, executes those plugins, and
+ * reports their results. The engine coordinates execution; it does not return
+ * a result summary to its caller.
  *
- * If a plugin throws, the engine records a failed result for it and continues
- * with the other matching plugins.
+ * Webhook and scheduled executions follow the same code path. Their triggers
+ * and payloads reflect the event or scheduled workflow that started each
+ * execution. If a plugin throws, the engine records a failed result for that
+ * plugin and continues with the other matching plugins.
  */
 export class CoreEngine {
   constructor(
@@ -47,10 +49,10 @@ export class CoreEngine {
    * aggregated results. Produces exactly one result per resolved plugin, in
    * registration order, for reporting.
    *
-   * Failures are isolated per plugin: a throwing plugin does not stop the
-   * remaining plugins or reject this promise; it is reported as a result with
-   * `success: false`, and the original error's stack trace is preserved in the
-   * report.
+   * Failures are isolated per plugin: a plugin that throws does not stop the
+   * remaining plugins from running, and does not reject this promise. Its
+   * failure is reported as a `PluginResult` with `success: false`, and the
+   * original error's stack trace is preserved in that result's `message`.
    *
    * @param {ExecutionContext} context - Execution context carrying the trigger,
    *   event payload, repository, and repository configuration. Must satisfy
@@ -100,8 +102,9 @@ export class CoreEngine {
    * Executes a single plugin, converting any thrown error into a failed
    * result.
    *
-   * The error's stack trace is appended to `message` so the failure can be
-   * traced.
+   * The error's stack trace is kept: it is appended to the returned `message`
+   * after the summary line, so a failure that reaches a log or a comment can
+   * still be traced back to where it was thrown.
    *
    * @param {OppiabotPlugin} plugin - The plugin to execute.
    * @param {ExecutionContext} context - The execution context passed unchanged

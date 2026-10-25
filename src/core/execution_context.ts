@@ -47,7 +47,10 @@ export type RuntimeEventPayload = Record<string, unknown>;
 export class ExecutionContext {
   constructor(
     /**
-     * The event that caused this run; see `Trigger`.
+     * The event that caused this run. The entrypoint builds it from the
+     * webhook's event and action names, or from the scheduled workflow's
+     * names, and the Core Engine passes it to `PluginRegistry.resolvePlugins`
+     * to decide which plugins run.
      */
     public readonly trigger: Trigger,
     /**
