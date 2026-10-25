@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ChangedFile,
@@ -204,6 +204,43 @@ function createClient(): {
     new RepositoryContext('oppia', 'oppiabot', 'develop')
   );
   return {client, api};
+}
+
+/**
+ * Creates a Dry-Run client backed by a fake GitHub API client.
+ *
+ * @returns {Object} The client and its fake, for assertions.
+ */
+function createDryRunClient(): {
+  client: OppiabotGitHubClient;
+  api: FakeGitHubApiClient;
+} {
+  const api = new FakeGitHubApiClient();
+  const client = new OppiabotGitHubClient(
+    api,
+    new RepositoryContext('oppia', 'oppiabot', 'develop'),
+    {dryRun: true}
+  );
+  return {client, api};
+}
+
+/**
+ * Captures console.log output for the duration of one test.
+ *
+ * @returns {object} The captured `logs` array and a `restore` callback.
+ */
+function captureLogs(): {logs: string[]; restore: () => void} {
+  const logs: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map((arg) => String(arg)).join(' '));
+  };
+  return {
+    logs: logs,
+    restore: () => {
+      console.log = original;
+    }
+  };
 }
 
 describe('OppiabotGitHubClient', () => {
@@ -556,6 +593,139 @@ describe('OppiabotGitHubClient', () => {
           err instanceof OppiabotGitHubClientError &&
           err.message.includes('Validation Failed')
         )
+      );
+    });
+  });
+
+  describe('Dry-Run', () => {
+    let dryRunLogs: string[];
+    let restoreLogs: () => void;
+
+    beforeEach(() => {
+      const captured = captureLogs();
+      dryRunLogs = captured.logs;
+      restoreLogs = captured.restore;
+    });
+
+    afterEach(() => {
+      restoreLogs();
+    });
+
+    it('executes live by default and records nothing', () => {
+      const {client} = createClient();
+      assert.strictEqual(client.isDryRun(), false);
+      assert.deepStrictEqual(client.getRecordedMutations(), []);
+    });
+
+    it('records an intended mutation without sending it', async () => {
+      const {client, api} = createDryRunClient();
+      const status = await client.createComment(7, 'A comment');
+      assert.strictEqual(client.isDryRun(), true);
+      assert.strictEqual(status, 200);
+      assert.deepStrictEqual(api.requests, []);
+      assert.deepStrictEqual(client.getRecordedMutations(), [{
+        route: 'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
+        parameters: {
+          owner: 'oppia',
+          repo: 'oppiabot',
+          issue_number: 7,
+          body: 'A comment'
+        }
+      }]);
+    });
+
+    it('records every kind of mutation in execution order', async () => {
+      const {client, api} = createDryRunClient();
+      await client.createComment(7, 'A comment');
+      await client.addLabels(7, ['bug']);
+      await client.removeLabel(7, 'bug');
+      await client.addAssignees(7, ['reviewer']);
+      await client.removeAssignees(7, ['reviewer']);
+      await client.closeIssue(7);
+      assert.deepStrictEqual(
+        client.getRecordedMutations().map((mutation) => mutation.route),
+        [
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/labels',
+          'DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}',
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/assignees',
+          'DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees',
+          'PATCH /repos/{owner}/{repo}/issues/{issue_number}'
+        ]
+      );
+      assert.deepStrictEqual(api.requests, []);
+    });
+
+    it('logs each intended mutation', async () => {
+      const {client} = createDryRunClient();
+      await client.addLabels(7, ['bug']);
+      assert.strictEqual(dryRunLogs.length, 1);
+      assert.match(dryRunLogs[0], /\[OppiabotGitHubClient\] Dry-Run:/);
+      assert.match(
+        dryRunLogs[0],
+        /POST \/repos\/\{owner\}\/\{repo\}\/issues\/\{issue_number\}\/labels/
+      );
+      assert.match(dryRunLogs[0], /"labels":\["bug"\]/);
+    });
+
+    it('still reads repository state from GitHub', async () => {
+      const {client, api} = createDryRunClient();
+      const pullRequest = await client.getPullRequest(42);
+      assert.strictEqual(pullRequest.number, 42);
+      assert.deepStrictEqual(
+        api.requests.map((request) => request.route),
+        ['GET /repos/{owner}/{repo}/pulls/{pull_number}']
+      );
+    });
+
+    it('returns a copy of the recorded mutations', async () => {
+      const {client} = createDryRunClient();
+      await client.addLabels(7, ['bug']);
+      const recorded = client.getRecordedMutations() as
+        Array<{route: string; parameters: Record<string, unknown>}>;
+      recorded.pop();
+      assert.strictEqual(client.getRecordedMutations().length, 1);
+    });
+
+    it('creates an independent Dry-Run client', async () => {
+      const {client, api} = createClient();
+      const dryRunClient = client.asDryRun();
+      assert.strictEqual(client.isDryRun(), false);
+      assert.strictEqual(dryRunClient.isDryRun(), true);
+      assert.deepStrictEqual(
+        dryRunClient.getRepository().getFullName(),
+        'oppia/oppiabot'
+      );
+
+      await dryRunClient.addLabels(7, ['bug']);
+      assert.strictEqual(dryRunClient.getRecordedMutations().length, 1);
+      assert.deepStrictEqual(client.getRecordedMutations(), []);
+      assert.deepStrictEqual(api.requests, []);
+    });
+
+    it('keeps a Dry-Run client in Dry-Run mode', () => {
+      const {client} = createDryRunClient();
+      assert.strictEqual(client.asDryRun().isDryRun(), true);
+    });
+
+    it('records parameter values independently of the caller', async () => {
+      const {client} = createDryRunClient();
+      const labels = ['bug'];
+      await client.addLabels(7, labels);
+      labels.push('urgent');
+      assert.deepStrictEqual(
+        client.getRecordedMutations()[0].parameters.labels,
+        ['bug']
+      );
+
+      const recorded = client.getRecordedMutations() as Array<{
+        route: string;
+        parameters: Record<string, unknown>;
+      }>;
+      (recorded[0].parameters.labels as string[]).push('changed');
+      assert.deepStrictEqual(
+        client.getRecordedMutations()[0].parameters.labels,
+        ['bug']
       );
     });
   });

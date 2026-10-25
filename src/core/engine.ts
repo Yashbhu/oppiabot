@@ -29,6 +29,11 @@ import { PluginRegistry } from './pluginRegistry';
  * and are enabled by the configuration, and runs each one. It reports the
  * aggregated results and does not return them to the caller. A plugin that
  * throws does not stop the others; see `execute`.
+ *
+ * When the execution context carries a GitHub client, the engine gives each
+ * plugin a client configured from that plugin's `dry_run` configuration.
+ * Dry-Run plugins therefore reach GitHub for reads but record, rather than
+ * perform, their intended mutations.
  */
 export class CoreEngine {
   constructor(
@@ -62,6 +67,47 @@ export class CoreEngine {
       results.push(await this.executePlugin(plugin, context));
     }
     this.reportResults(plugins, results);
+  }
+
+  /**
+   * Builds the context a plugin receives.
+   *
+   * When the context carries a GitHub client, the returned context carries a
+   * client for the same repository whose Dry-Run mode combines the plugin's
+   * `dry_run` configuration with the mode of the client the entrypoint
+   * supplied. A client that is already in Dry-Run mode takes precedence, so a
+   * maintainer can run an entire execution in Dry-Run mode regardless of the
+   * per-plugin configuration.
+   *
+   * Each Dry-Run plugin receives its own client so that the mutations it
+   * records are attributed to that plugin alone. Live plugins share the client
+   * supplied by the entrypoint and record nothing.
+   *
+   * @param {OppiabotPlugin} plugin - The plugin that will receive the context.
+   * @param {ExecutionContext} context - The context of the execution.
+   * @returns {ExecutionContext} The original context when it carries no GitHub
+   *   client or runs live, otherwise a copy with a Dry-Run client.
+   * @throws {ConfigurationValidationError} if the plugin's configuration no
+   *   longer satisfies its schema.
+   */
+  private contextForPlugin(
+    plugin: OppiabotPlugin,
+    context: ExecutionContext
+  ): ExecutionContext {
+    const githubClient = context.githubClient;
+    const configuration = context.configuration;
+    if (githubClient === undefined || configuration === undefined) {
+      return context;
+    }
+    const pluginConfiguration = configuration.getPluginConfiguration(
+      plugin.name,
+      {[plugin.name]: plugin.configSchema}
+    );
+    const dryRun = githubClient.isDryRun() || pluginConfiguration.dry_run;
+    if (!dryRun) {
+      return context;
+    }
+    return context.withGitHubClient(githubClient.asDryRun());
   }
 
   /**
@@ -103,7 +149,8 @@ export class CoreEngine {
    * failed result.
    *
    * @param {OppiabotPlugin} plugin - The plugin to run.
-   * @param {ExecutionContext} context - Passed unchanged to the plugin.
+   * @param {ExecutionContext} context - The execution context. The plugin
+   *   receives a copy whose GitHub client is configured for its Dry-Run mode.
    * @returns {Promise<PluginResult>} The plugin's result, or, if it throws or
    *   resolves to something that is not a `PluginResult`, a failed result
    *   describing what went wrong. Never rejects.
@@ -113,7 +160,10 @@ export class CoreEngine {
     context: ExecutionContext
   ): Promise<PluginResult> {
     try {
-      const result = await plugin.execute(context);
+      const result = await plugin.execute(this.contextForPlugin(
+        plugin,
+        context
+      ));
       if (!isPluginResult(result)) {
         return this.failureResult(
           'it returned a value that is not a PluginResult.'
