@@ -17,10 +17,10 @@
  */
 
 /**
- * The validation rule for one configuration field.
+ * Represents the validation rule for a single configuration field.
  *
- * `type` is the JavaScript type the value must have. When `enum` is set, the
- * value must also be one of its entries.
+ * A property descriptor defines the expected type and, when provided, the
+ * allowed values for a configuration field.
  */
 export interface ConfigSchemaProperty {
   type: 'string' | 'number' | 'boolean' | 'object';
@@ -28,10 +28,8 @@ export interface ConfigSchemaProperty {
 }
 
 /**
- * The validation rules a plugin declares for its own configuration entries.
- *
- * `properties` maps each allowed setting name to its rule, and `required`
- * lists the setting names that must be present.
+ * Represents the validation schema used by a plugin to validate its
+ * repository-specific configuration.
  */
 export class ConfigSchema {
   constructor(
@@ -89,13 +87,10 @@ export class ConfigSchema {
    */
   private validateFieldValue(key: string, value: unknown): void {
     const property = this.properties[key] as ConfigSchemaProperty;
-    if (property.type === 'object' && value === null) {
-      throw new ConfigurationValidationError(
-        `Configuration field ${key} must be of type ${property.type}, ` +
-        'received null.'
-      );
-    }
-    if (property.type !== undefined && typeof value !== property.type) {
+    if (
+      property.type !== undefined &&
+      (value === null || typeof value !== property.type)
+    ) {
       throw new ConfigurationValidationError(
         `Configuration field ${key} must be of type ${property.type}, ` +
         `received ${value === null ? 'null' : typeof value}.`
@@ -118,10 +113,7 @@ export class ConfigSchema {
 export interface PluginConfiguration {
   /** Whether the plugin is enabled for the repository. */
   enabled: boolean;
-  /**
-   * Whether the plugin should execute in Dry-Run mode. When true, the plugin
-   * reports the GitHub operations it would perform without applying them.
-   */
+  /** Whether the plugin should execute in Dry-Run mode. */
   dry_run: boolean;
   /** Plugin-specific configuration values. */
   settings: Record<string, unknown>;
@@ -157,24 +149,23 @@ export class RepositoryConfiguration {
    *   loader passes these so that plugin-specific rules are enforced. Defaults
    *   to an empty null-prototype dictionary, so that a plugin named after an
    *   Object property does not resolve to an inherited value.
-   * @throws {ConfigurationValidationError} if the version is missing, empty,
-   *   or not a string, if plugins is missing or is not a plugin mapping, if a
+   * @throws {ConfigurationValidationError} if the version is empty, if a
    *   plugin configuration is structurally invalid, or if an enabled plugin's
    *   configuration does not satisfy the expected plugin configuration schema.
    */
   validate(
     pluginConfigSchemas: Record<string, ConfigSchema> = Object.create(null)
   ): void {
-    if (typeof this.version !== 'string' || this.version === '') {
+    if (
+      this.version === undefined ||
+      this.version === null ||
+      this.version === ''
+    ) {
       throw new ConfigurationValidationError(
         'The repository configuration must define a version.'
       );
     }
-    if (
-      typeof this.plugins !== 'object' ||
-      this.plugins === null ||
-      Array.isArray(this.plugins)
-    ) {
+    if (this.plugins === undefined || this.plugins === null) {
       throw new ConfigurationValidationError(
         'The repository configuration must define plugins.'
       );
@@ -195,11 +186,13 @@ export class RepositoryConfiguration {
   }
 
   /**
-   * Returns the schema registered for `pluginName`, or `undefined` when the
-   * caller's dictionary has no own entry for it.
+   * Returns the ConfigSchema registered for a plugin name, or undefined when
+   * the schemas dictionary does not own an entry for that name.
    *
-   * Only own entries are read, so an inherited Object property such as
-   * `toString` is never treated as a registered schema.
+   * A name without an own entry is treated as unregistered, so an inherited
+   * Object property such as `toString` or `constructor` is never resolved as
+   * a schema. This holds even for a caller-supplied dictionary built with the
+   * object-literal syntax, which inherits Object.prototype.
    *
    * @param {Record<string, ConfigSchema>} pluginConfigSchemas - Maps a plugin
    *   name to its ConfigSchema.
@@ -251,8 +244,7 @@ export class RepositoryConfiguration {
     }
     if (
       typeof pluginConfiguration.settings !== 'object' ||
-      pluginConfiguration.settings === null ||
-      Array.isArray(pluginConfiguration.settings)
+      pluginConfiguration.settings === null
     ) {
       throw new ConfigurationValidationError(
         `The configuration for plugin ${pluginName} must define a settings ` +
@@ -267,9 +259,8 @@ export class RepositoryConfiguration {
    * @param {string} pluginName - The name of the plugin being validated.
    * @param {PluginConfiguration} pluginConfiguration - The configuration
    *   associated with the plugin.
-   * @param {ConfigSchema | undefined} configSchema - The schema declared by
-   *   the plugin, or `undefined` when the plugin is not registered, in which
-   *   case the settings are not schema-checked.
+   * @param {ConfigSchema} configSchema - The schema declared by the plugin, or
+   *   undefined when the plugin is not registered.
    * @throws {ConfigurationValidationError} if the settings do not satisfy the
    *   plugin's configuration schema.
    */
@@ -306,8 +297,8 @@ export class RepositoryConfiguration {
    * @returns {PluginConfiguration} Configuration associated with the requested
    *   plugin.
    * @throws {ConfigurationValidationError} if the plugin is not configured, or
-   *   its configuration is structurally invalid, or its settings do not
-   *   satisfy the plugin's schema.
+   *   if the plugin configuration does not satisfy the plugin's configuration
+   *   schema.
    */
   getPluginConfiguration(
     pluginName: string,

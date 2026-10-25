@@ -17,43 +17,43 @@
  */
 
 /**
- * The event that caused one Oppiabot execution.
+ * The event that caused an Oppiabot execution.
  *
- * A trigger pairs an event name with an optional action. A webhook entrypoint
- * builds one from the names GitHub reports (`pull_request` + `opened`); a
- * scheduled entrypoint builds one from `'schedule'` and the workflow's name.
- * A plugin lists the triggers it handles in `supportedTriggers`, and the
- * registry selects a plugin when one of those triggers matches the incoming
- * trigger (see `matches`).
+ * A webhook entrypoint builds one from the event and action names GitHub sent
+ * with the delivery; a scheduled entrypoint builds one from its workflow's
+ * schedule name. The entrypoint passes it to `CoreEngine.execute`, which uses
+ * it to decide which registered plugins run.
  */
 export class Trigger {
   constructor(
     /**
-     * The event name, without an action: `'pull_request'` for a
-     * `pull_request` delivery, `'issues'` for `issues`, or `'schedule'` for a
-     * scheduled run. Must be a non-empty string (enforced by `validate`).
+     * The event name, without an action: 'pull_request' for a
+     * `pull_request.opened` delivery, 'issues' for `issues.assigned`, or
+     * 'schedule' for a scheduled run. Pass the name the platform reported;
+     * there is nothing to normalize first.
      */
     public readonly event: string,
     /**
-     * The action within the event, or `undefined`. For a webhook this is the
-     * GitHub action (`'opened'`, `'assigned'`); for a scheduled run it is the
-     * workflow's schedule name (`'stale-sweep'`). `undefined` means "every
-     * action of this event"; when defined it must be non-empty (enforced by
-     * `validate`).
+     * The action name for a GitHub event, such as 'opened' for
+     * `pull_request.opened`. For a scheduled run, this is the scheduled
+     * workflow's name, such as 'stale-sweep'. If `action` is `undefined`, this
+     * trigger matches any action for the same event.
      */
     public readonly action?: string
   ) {}
 
   /**
-   * Returns this trigger's string key: `event` when `action` is `undefined`,
-   * otherwise `event.action`.
+   * Returns a string key that represents this trigger.
    *
-   * Two triggers share a key only when they are identical. A key therefore
-   * cannot express that one trigger covers several actions, so use `matches`
-   * to decide whether a plugin supports a trigger.
+   * The key is `event` when this trigger has no action, and `event.action`
+   * otherwise. Use it to describe or log a trigger, or to compare two triggers
+   * for exact equality. Do not use it to decide whether a plugin supports a
+   * trigger: equal keys only identify identical triggers, so a key comparison
+   * misses a trigger without an action that supports every action of its event.
+   * Use `matches()` for that check.
    *
-   * @returns {string} The key, e.g. `'issues'`, `'pull_request.opened'`, or
-   *   `'schedule.stale-sweep'`.
+   * @returns {string} For example 'pull_request.opened', 'issues', or
+   *   'schedule.stale-sweep'.
    */
   toKey(): string {
     if (this.action === undefined) {
@@ -63,18 +63,15 @@ export class Trigger {
   }
 
   /**
-   * Returns whether `other` is covered by this trigger.
+   * Returns whether this trigger matches another trigger.
    *
-   * It is covered when both triggers have the same `event`, and either this
-   * trigger has no `action` (so it covers every action) or its `action` equals
-   * `other.action`.
+   * A trigger matches another trigger when the event names are equal and
+   * either this trigger has no action or its action equals the other trigger's
+   * action. A registered trigger without an action therefore matches all
+   * actions for its event.
    *
-   * The relation is not symmetric when exactly one trigger has an action: an
-   * action-less trigger matches an action-specific one but not vice versa.
-   * Call it as `supportedTrigger.matches(incomingTrigger)`.
-   *
-   * @param {Trigger} other - The trigger to test against.
-   * @returns {boolean} Whether `other` is covered by this trigger.
+   * @param {Trigger} other - The trigger to compare against.
+   * @returns {boolean} Whether this trigger matches the other trigger.
    */
   matches(other: Trigger): boolean {
     if (this.event !== other.event) {
@@ -87,10 +84,10 @@ export class Trigger {
   }
 
   /**
-   * Validates that this trigger represents a usable event.
+   * Validates the trigger domain object.
    *
-   * @throws {TriggerValidationError} if `event` is `undefined`, `null`, or
-   *   empty, or if `action` is defined and is `null` or empty.
+   * @throws {TriggerValidationError} if the event is undefined, null, or empty,
+   *   or the optional action is provided but null or empty.
    */
   validate(): void {
     if (
