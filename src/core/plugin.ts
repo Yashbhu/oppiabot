@@ -21,11 +21,11 @@ import { ConfigSchema } from '../types/repository_configuration';
 import { ExecutionContext } from './execution_context';
 
 /**
- * A GitHub operation a plugin reported performing during an execution.
+ * The GitHub operations a plugin performed while handling an execution.
  *
- * A plugin lists the operations it performed in `PluginResult.actions`, so a
- * run's effects can be described as concrete GitHub operations rather than
- * free text.
+ * A plugin reports what it did by returning these values in
+ * `PluginResult.actions`, so a run can be described as a list of concrete
+ * GitHub changes instead of free text.
  */
 export enum PluginAction {
   /** Post a comment on the relevant GitHub resource. */
@@ -45,59 +45,72 @@ export enum PluginAction {
 }
 
 /**
- * The outcome a plugin reports for one execution.
+ * Represents the outcome of plugin execution returned by an Oppiabot plugin
+ * after processing an execution context.
  */
 export interface PluginResult {
-  /** The GitHub operations the plugin performed; empty if it performed none. */
+  /** GitHub operations performed during execution. */
   actions: PluginAction[];
-  /** Human-readable description of what happened, for logs and comments. */
+  /** Human-readable explanation of the plugin execution result. */
   message: string;
-  /** Whether the plugin completed the work it intended to do. */
+  /** Whether plugin execution completed successfully. */
   success: boolean;
 }
 
 /**
- * The information a plugin supplies to `PluginRegistry.register()`.
+ * Represents the registration information provided by a plugin to the Plugin
+ * Registry during application initialization.
  */
 export interface PluginRegistrationMetadata {
-  /** Unique identifier; used as both the registry key and configuration key. */
+  /** Unique identifier of the plugin. */
   name: string;
   /**
-   * The triggers this plugin handles. The plugin runs when one of these
-   * matches the execution's trigger (see `Trigger.matches`). A scheduled
-   * trigger sets only the schedule name it handles; the cadence lives in the
-   * GitHub Actions workflow, not here.
+   * Execution triggers supported by the plugin. The cadence of scheduled
+   * executions is defined by the GitHub Actions workflow cron configuration
+   * rather than plugin metadata; supportedTriggers identifies which scheduled
+   * execution a plugin supports.
    */
   supportedTriggers: Trigger[];
-  /** Schema used to validate this plugin's entry in the configuration. */
+  /** Schema definition used to validate plugin-specific configuration. */
   configSchema: ConfigSchema;
 }
 
 /**
- * An Oppiabot workflow that the Core Engine can run.
+ * Represents an isolated workflow implementation that can be executed by the
+ * Core Engine for supported execution triggers, including GitHub events and
+ * scheduled executions.
  *
- * Implement this interface once per workflow. Plugins are registered with the
- * `PluginRegistry` during initialization, and the registry resolves them per
- * execution by their `supportedTriggers` and configuration. Keeping workflows
- * behind this interface lets them change without modifying the Core Engine.
+ * New Oppiabot workflows are implemented as independent plugins implementing
+ * this contract, allowing workflow logic to evolve without modifying the Core
+ * Engine. Plugins are explicitly registered with the Plugin Registry during
+ * application initialization.
  */
 export interface OppiabotPlugin extends PluginRegistrationMetadata {
   /**
-   * Runs this plugin for `context` and reports the outcome.
+   * Executes workflow-specific plugin logic for the given execution context.
    *
-   * @param {ExecutionContext} context - The execution context, containing the
-   *   trigger, event payload, repository, and configuration for this run.
-   * @returns {Promise<PluginResult>} The operations performed, a message, and
-   *   whether the plugin succeeded.
-   * @throws {PluginConfigurationError} if configuration this plugin requires is
+   * A plugin should return a `PluginResult` describing its outcome. If
+   * `execute()` throws an error, `CoreEngine` catches it and creates a failed
+   * `PluginResult`. The error is not propagated to the caller of
+   * `CoreEngine.execute()`, and the engine continues executing the other
+   * matching plugins.
+   *
+   * @param {ExecutionContext} context - Contains GitHub event information,
+   *   repository details, configuration, and runtime execution state.
+   * @returns {Promise<PluginResult>} Result of the plugin execution describing
+   *   the actions performed, message, and execution status.
+   * @throws {PluginConfigurationError} if required plugin configuration is
    *   missing or invalid.
-   * @throws {PluginExecutionError} if the plugin fails while running.
+   * @throws {PluginExecutionError} if plugin execution fails.
    */
   execute(context: ExecutionContext): Promise<PluginResult>;
 }
 
 /**
- * Error thrown when a plugin cannot be resolved by the Plugin Registry.
+ * Error thrown by the Plugin Registry when a plugin cannot be registered or
+ * resolved: for example, registering a name that is already taken, or
+ * resolving an enabled plugin whose settings do not satisfy the schema it
+ * registered.
  */
 export class PluginResolutionError extends Error {
   constructor(message: string) {

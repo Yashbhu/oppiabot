@@ -24,12 +24,15 @@ import { ExecutionContext } from './execution_context';
 import { PluginConfiguration } from '../types/repository_configuration';
 
 /**
- * Holds the registered Oppiabot plugins and resolves those that apply to an
- * execution.
+ * Maintains the list of available Oppiabot plugins and resolves the plugins
+ * applicable to a given execution.
  *
- * Register every plugin once during initialization with `register()`. The Core
- * Engine then calls `resolvePlugins()` per execution; see that method for the
- * resolution contract.
+ * Plugins are explicitly registered during application initialization, each
+ * with a name, supported triggers, configuration schema, and execute handler.
+ *
+ * The Core Engine asks the registry which plugins apply to an execution via
+ * `resolvePlugins()`: a plugin applies only when a registered trigger matches
+ * the received trigger and the repository configuration enables it.
  */
 export class PluginRegistry {
   private readonly pluginsByName: Map<string, OppiabotPlugin>;
@@ -39,11 +42,10 @@ export class PluginRegistry {
   }
 
   /**
-   * Registers `plugin`.
+   * Registers a plugin with the registry.
    *
-   * @param {OppiabotPlugin} plugin - The plugin to register; its `name` is the
-   *   key used by the other methods.
-   * @throws {PluginResolutionError} if a plugin with the same `name` is already
+   * @param {OppiabotPlugin} plugin - The plugin to register.
+   * @throws {PluginResolutionError} if a plugin with the same name is already
    *   registered.
    */
   register(plugin: OppiabotPlugin): void {
@@ -56,11 +58,11 @@ export class PluginRegistry {
   }
 
   /**
-   * Returns the registration metadata of the plugin named `name`.
+   * Returns the registration metadata of a registered plugin.
    *
-   * @param {string} name - The plugin name to look up.
-   * @returns {PluginRegistrationMetadata | undefined} The metadata, or
-   *   `undefined` if no plugin of that name is registered.
+   * @param {string} name - Name of the plugin.
+   * @returns {PluginRegistrationMetadata | undefined} The plugin registration
+   *   metadata, or undefined if no plugin with the given name is registered.
    */
   getRegistration(name: string): PluginRegistrationMetadata | undefined {
     const plugin = this.pluginsByName.get(name);
@@ -71,34 +73,35 @@ export class PluginRegistry {
   }
 
   /**
-   * Returns all registered plugins in registration order.
+   * Returns all registered plugins.
    *
-   * @returns {OppiabotPlugin[]} A new array; mutating it does not affect the
-   *   registry.
+   * @returns {OppiabotPlugin[]} All registered plugins.
    */
   getAllPlugins(): OppiabotPlugin[] {
     return Array.from(this.pluginsByName.values());
   }
 
   /**
-   * Returns the registered plugins that apply to `context`.
+   * Resolves the registered plugins applicable to the current execution.
    *
    * A plugin applies when both of these hold:
    *
-   * - Its `supportedTriggers` contains a trigger that matches
-   *   `context.trigger` (see `Trigger.matches`). A trigger with no action
-   *   matches every action of its event.
-   * - `context.configuration` enables it (see `isEnabled`).
+   * - The received trigger matches a supported trigger, using
+   *   `Trigger.matches()` (an action-less registered trigger matches every
+   *   action of its event), not a canonical-key comparison.
+   * - The repository configuration enables the plugin. A context without a
+   *   configuration enables nothing; a plugin that is absent from the
+   *   configuration, or configured with `enabled: false`, is not executed.
    *
-   * Only registered plugins are considered; a plugin named in the
-   * configuration but not registered is ignored. The returned plugins are in
-   * registration order, and each appears at most once.
+   * Only registered plugins are considered. A configured plugin the registry
+   * does not know about is ignored, so configuration may declare a plugin
+   * before it is registered.
    *
-   * @param {ExecutionContext} context - The execution context. Only its
-   *   `trigger` and `configuration` are read.
-   * @returns {OppiabotPlugin[]} The applicable plugins.
-   * @throws {PluginResolutionError} if such a plugin's configuration is
-   *   invalid (see `isEnabled`).
+   * @param {ExecutionContext} context - Execution context carrying the
+   *   trigger to match and the repository configuration that enables plugins.
+   * @returns {OppiabotPlugin[]} The applicable plugins, in registration order.
+   * @throws {PluginResolutionError} if an enabled plugin's configuration
+   *   cannot be resolved against the schema the plugin registered.
    */
   resolvePlugins(context: ExecutionContext): OppiabotPlugin[] {
     const applicablePlugins: OppiabotPlugin[] = [];
@@ -115,12 +118,11 @@ export class PluginRegistry {
   }
 
   /**
-   * Returns whether `plugin` supports `trigger`.
+   * Returns whether a plugin declares support for the given trigger.
    *
-   * @param {OppiabotPlugin} plugin - The plugin to test.
-   * @param {Trigger} trigger - The trigger to match.
-   * @returns {boolean} `true` if any entry of `plugin.supportedTriggers`
-   *   matches `trigger`.
+   * @param {OppiabotPlugin} plugin - The registered plugin.
+   * @param {Trigger} trigger - The trigger received by the Core Engine.
+   * @returns {boolean} Whether any of the plugin's supported triggers match.
    */
   private supportsTrigger(plugin: OppiabotPlugin, trigger: Trigger): boolean {
     return plugin.supportedTriggers.some(
@@ -129,18 +131,23 @@ export class PluginRegistry {
   }
 
   /**
-   * Returns whether `context.configuration` enables `plugin`.
+   * Returns whether the repository configuration enables a plugin.
    *
-   * The result is `true` only when `context.configuration` is defined, has an
-   * own entry for `plugin.name` whose value is an object with `enabled: true`,
-   * and that entry passes `getPluginConfiguration` for `plugin.configSchema`.
-   * In every other case the result is `false`.
+   * A plugin is enabled only when the configuration declares it with the
+   * literal value `enabled: true`. Any other value, including a malformed one
+   * such as a string, is not treated as enabled; malformed configuration is
+   * rejected upstream by `ExecutionContext.validate()`. A context without a
+   * configuration enables nothing.
    *
-   * @param {OppiabotPlugin} plugin - The plugin to test.
+   * When the context has been validated, a present configuration is already
+   * structurally valid, so this method only validates the plugin's own
+   * settings against the schema the plugin registered.
+   *
+   * @param {OppiabotPlugin} plugin - The registered plugin.
    * @param {ExecutionContext} context - The execution context.
-   * @returns {boolean} Whether the plugin is enabled.
-   * @throws {PluginResolutionError} if the plugin is enabled but its
-   *   configuration is structurally invalid or fails `plugin.configSchema`.
+   * @returns {boolean} Whether the plugin is enabled for this execution.
+   * @throws {PluginResolutionError} if the plugin is enabled but its settings
+   *   do not satisfy the schema the plugin registered.
    */
   private isEnabled(
     plugin: OppiabotPlugin,
@@ -164,9 +171,8 @@ export class PluginRegistry {
     ) {
       return false;
     }
-    let pluginConfiguration: PluginConfiguration;
     try {
-      pluginConfiguration = configuration.getPluginConfiguration(
+      configuration.getPluginConfiguration(
         plugin.name,
         { [plugin.name]: plugin.configSchema }
       );
@@ -179,15 +185,14 @@ export class PluginRegistry {
         `'${context.trigger.toKey()}': ${errorMessage}`
       );
     }
-    return pluginConfiguration.enabled;
+    return true;
   }
 
   /**
-   * Returns the registration metadata view of `plugin`.
+   * Converts a plugin into its registration metadata representation.
    *
-   * @param {OppiabotPlugin} plugin - The plugin to describe.
-   * @returns {PluginRegistrationMetadata} `plugin`'s name, supported triggers,
-   *   and configuration schema.
+   * @param {OppiabotPlugin} plugin - The plugin to convert.
+   * @returns {PluginRegistrationMetadata} The plugin registration metadata.
    */
   private toRegistrationMetadata(
     plugin: OppiabotPlugin
