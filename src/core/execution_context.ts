@@ -17,6 +17,7 @@
  */
 
 import { Trigger } from './trigger';
+import { OppiabotGitHubClient } from './oppiabot_github_client';
 import { RepositoryContext } from '../types/repository';
 import { RepositoryConfiguration } from
   '../types/repository_configuration';
@@ -69,6 +70,11 @@ export class ExecutionContext {
      * that case.
      */
     public readonly configuration?: RepositoryConfiguration,
+    /**
+     * The client plugins use to read and change GitHub state for this run.
+     * `undefined` when the entrypoint supplied none.
+     */
+    public readonly githubClient?: OppiabotGitHubClient,
     /**
      * The GitHub webhook delivery ID when this run came from a webhook, and
      * `undefined` when it came from a schedule. Use it to correlate a run with
