@@ -91,8 +91,9 @@ export class ExecutionContext {
    * `validate()` methods: `Trigger.validate()` rejects an undefined, null, or
    * empty event and a null or empty action, and `RepositoryContext.validate()`
    * rejects an undefined, null, or empty owner, name, or default branch. When
-   * `configuration` is provided its own `validate()` is called too. `payload`
-   * and `deliveryId` carry no constraints here, so they are not inspected.
+   * `configuration` is provided its own `validate()` is called too. `payload`,
+   * `githubClient`, and `deliveryId` carry no constraints here, so they are
+   * not inspected.
    *
    * @throws {ExecutionContextValidationError} if the trigger, repository,
    *   or provided configuration is invalid. The error identifies the
