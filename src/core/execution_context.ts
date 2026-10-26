@@ -72,7 +72,8 @@ export class ExecutionContext {
     public readonly configuration?: RepositoryConfiguration,
     /**
      * The client plugins use to read and change GitHub state for this run.
-     * `undefined` when the entrypoint supplied none.
+     * `undefined` when the entrypoint supplied none; a plugin that performs
+     * GitHub operations must handle that case.
      */
     public readonly githubClient?: OppiabotGitHubClient,
     /**
