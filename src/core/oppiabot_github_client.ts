@@ -43,8 +43,9 @@ export interface GitHubLabel {
  * Only the fields declared here are typed; the runtime object is the full
  * GitHub response and may carry more. `draft`, `assignees`, and
  * `requested_reviewers` are optional because GitHub may omit them. The merge
- * state (`merged`, `mergeable`) is not part of a list response; it is declared
- * on `PullRequestDetails`, which `getPullRequest` returns.
+ * state (`merged`, `mergeable`) is not in GitHub's documented list response
+ * schema; it is declared on `PullRequestDetails`, which `getPullRequest`
+ * returns.
  */
 export interface PullRequest {
   number: number;
@@ -70,7 +71,7 @@ export interface PullRequest {
 
 /**
  * A single GitHub pull request as returned by `getPullRequest`, which includes
- * the merge state that GitHub does not return in list responses.
+ * the merge state that GitHub's documented list response schema omits.
  */
 export interface PullRequestDetails extends PullRequest {
   merged: boolean;
@@ -393,8 +394,8 @@ export class OppiabotGitHubClient {
    *
    * Every page is read because scheduled plugins sweep the repository's open
    * pull requests (for example the stale pull request sweeper), and a single
-   * page would silently omit the remainder. The results do not include merge
-   * state; call `getPullRequest` for `merged` and `mergeable`.
+   * page would silently omit the remainder. GitHub's list response schema has
+   * no merge state; call `getPullRequest` for `merged` and `mergeable`.
    *
    * @param {ResourceState} [state] - State of the pull requests to list.
    *   Defaults to 'open'.
