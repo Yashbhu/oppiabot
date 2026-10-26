@@ -51,8 +51,8 @@ export class CoreEngine {
    *
    * Failures are isolated per plugin: a plugin that throws does not stop the
    * remaining plugins from running, and does not reject this promise. Its
-   * failure is reported as a `PluginResult` with `success: false`, and the
-   * original error's stack trace is preserved in that result's `message`.
+   * failure is reported as a result with `success: false`, and the original
+   * error's stack trace is preserved in the report.
    *
    * @param {ExecutionContext} context - Execution context carrying the trigger,
    *   event payload, repository, and repository configuration. Must satisfy
