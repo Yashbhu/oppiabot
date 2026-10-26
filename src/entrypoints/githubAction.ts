@@ -29,6 +29,7 @@ import {
   ConfigurationLoader,
   CoreEngine,
   ExecutionContext,
+  OppiabotGitHubClient,
   Trigger
 } from '../core';
 import { RuntimeEventPayload } from '../core/execution_context';
@@ -75,6 +76,11 @@ export interface ScheduledEntrypointConfig {
   engine: CoreEngine;
   /** Loads the repository configuration passed to the Core Engine. */
   configurationLoader: ConfigurationLoader;
+  /**
+   * Creates the GitHub client the plugins of this run use to read and change
+   * GitHub state in `repository`.
+   */
+  createGitHubClient(repository: RepositoryContext): OppiabotGitHubClient;
   /** The scheduled workflow environment, typically `process.env`. */
   environment: ScheduledEnvironment;
 }
@@ -185,9 +191,10 @@ export function buildScheduledPayload(
  * Handles one scheduled GitHub Actions run.
  *
  * The workflow identifier and repository are read from the environment, the
- * repository configuration is loaded, and the resulting ExecutionContext is
- * submitted to the Core Engine, which resolves and executes the plugins
- * registered for the 'schedule.<workflowId>' trigger.
+ * repository configuration is loaded, and the resulting ExecutionContext,
+ * carrying a GitHub client for the repository, is submitted to the Core Engine,
+ * which resolves and executes the plugins registered for the
+ * 'schedule.<workflowId>' trigger.
  *
  * Failures are not converted into a result: an unset OPPIABOT_WORKFLOW_ID, an
  * environment that does not identify the repository, a configuration that
@@ -196,7 +203,8 @@ export function buildScheduledPayload(
  * workflow's summary.
  *
  * @param {ScheduledEntrypointConfig} config - The engine, configuration
- *   loader, and scheduled workflow environment for this run.
+ *   loader, GitHub client factory, and scheduled workflow environment for this
+ *   run.
  * @returns {Promise<void>} Resolves once the applicable plugins have run.
  * @throws {ScheduledWorkflowError} if the environment does not identify the
  *   scheduled execution or the repository.
@@ -211,7 +219,8 @@ export async function handleScheduledExecution(
     new Trigger('schedule', workflowId),
     buildScheduledPayload(workflowId, repository),
     repository,
-    configuration
+    configuration,
+    config.createGitHubClient(repository)
   );
   await config.engine.execute(context);
 }

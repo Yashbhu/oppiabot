@@ -28,9 +28,11 @@ import { join } from 'path';
 import {
   ConfigurationLoader,
   CoreEngine,
+  OppiabotGitHubClient,
   PluginRegistry,
   RepositoryFileReader
 } from '../core';
+import type { GitHubApiClient } from '../core/oppiabot_github_client';
 import { RepositoryContext } from '../types';
 import {
   ScheduledEnvironment,
@@ -92,13 +94,18 @@ export interface ScheduledExecutionOptions {
   pluginRegistry: PluginRegistry;
   /** Directory the workflow checked the repository out into. */
   workspaceDirectory: string;
+  /**
+   * Creates the GitHub API client the plugins' GitHub operations are sent
+   * through for `repository`.
+   */
+  createApiClient(repository: RepositoryContext): GitHubApiClient;
 }
 
 /**
  * Builds the handler that processes one scheduled workflow run.
  *
- * @param {ScheduledExecutionOptions} options - The plugin registry and
- *   workspace directory.
+ * @param {ScheduledExecutionOptions} options - The plugin registry, workspace
+ *   directory, and GitHub API client factory.
  * @returns {(environment: ScheduledEnvironment) => Promise<void>} A handler
  *   that runs the applicable plugins for the scheduled run described by the
  *   given environment, typically `process.env`.
@@ -115,6 +122,8 @@ export function createScheduledExecution(
     handleScheduledExecution({
       engine: engine,
       configurationLoader: configurationLoader,
+      createGitHubClient: (repository: RepositoryContext) =>
+        new OppiabotGitHubClient(options.createApiClient(repository), repository),
       environment: environment
     });
 }

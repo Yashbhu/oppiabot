@@ -24,6 +24,7 @@ import {
   PluginResult,
   Trigger
 } from '../../src/core';
+import type { GitHubApiClient } from '../../src/core/oppiabot_github_client';
 import {
   ConfigSchema,
   RepositoryContext
@@ -33,6 +34,14 @@ import {
   WorkspaceRepositoryFileReader,
   createScheduledExecution
 } from '../../src/entrypoints';
+
+/**
+ * A GitHub API client that accepts every request, for tests that do not
+ * exercise GitHub operations.
+ */
+const fakeApiClient: GitHubApiClient = {
+  request: async <TData>() => ({status: 200, data: {} as TData})
+};
 
 /**
  * Creates a stub scheduled plugin that records its executions.
@@ -139,6 +148,50 @@ describe('createScheduledExecution', () => {
     await rm(workspace, {recursive: true, force: true});
   });
 
+  it('gives the plugins a GitHub client that sends requests through the ' +
+    'supplied API client', async () => {
+    const requests: Array<{route: string; parameters: Record<string, unknown>}>
+      = [];
+    const recordingApiClient: GitHubApiClient = {
+      request: async <TData>(
+        route: string,
+        parameters: Record<string, unknown>
+      ) => {
+        requests.push({route, parameters});
+        return {status: 200, data: {} as TData};
+      }
+    };
+    const registry = new PluginRegistry();
+    registry.register({
+      name: 'stale-sweeper',
+      supportedTriggers: [new Trigger('schedule', 'stale-sweep')],
+      configSchema: new ConfigSchema({}, []),
+      execute: async (context): Promise<PluginResult> => {
+        await context.githubClient!.getIssue(7);
+        return {actions: [], message: 'done', success: true};
+      }
+    });
+    const handler = createScheduledExecution({
+      pluginRegistry: registry,
+      workspaceDirectory: workspace,
+      createApiClient: () => recordingApiClient
+    });
+
+    await handler({
+      OPPIABOT_WORKFLOW_ID: 'stale-sweep',
+      GITHUB_REPOSITORY: 'oppia/oppia',
+      GITHUB_REF_NAME: 'develop'
+    });
+
+    assert.strictEqual(requests.length, 1);
+    assert.strictEqual(
+      requests[0].route,
+      'GET /repos/{owner}/{repo}/issues/{issue_number}'
+    );
+    assert.strictEqual(requests[0].parameters.owner, 'oppia');
+    assert.strictEqual(requests[0].parameters.repo, 'oppia');
+  });
+
   it('runs the plugins registered for the scheduled trigger', async () => {
     const executions: PluginResult[] = [];
     const registry = new PluginRegistry();
@@ -151,7 +204,8 @@ describe('createScheduledExecution', () => {
     );
     const handler = createScheduledExecution({
       pluginRegistry: registry,
-      workspaceDirectory: workspace
+      workspaceDirectory: workspace,
+      createApiClient: () => fakeApiClient
     });
 
     await handler({
@@ -176,7 +230,8 @@ describe('createScheduledExecution', () => {
     );
     const handler = createScheduledExecution({
       pluginRegistry: registry,
-      workspaceDirectory: workspace
+      workspaceDirectory: workspace,
+      createApiClient: () => fakeApiClient
     });
 
     await handler({
@@ -200,7 +255,8 @@ describe('createScheduledExecution', () => {
     );
     const handler = createScheduledExecution({
       pluginRegistry: registry,
-      workspaceDirectory: workspace
+      workspaceDirectory: workspace,
+      createApiClient: () => fakeApiClient
     });
 
     await handler({
@@ -216,7 +272,8 @@ describe('createScheduledExecution', () => {
     const registry = new PluginRegistry();
     const handler = createScheduledExecution({
       pluginRegistry: registry,
-      workspaceDirectory: workspace
+      workspaceDirectory: workspace,
+      createApiClient: () => fakeApiClient
     });
 
     await assert.rejects(
@@ -246,7 +303,8 @@ describe('createScheduledExecution', () => {
     try {
       const handler = createScheduledExecution({
         pluginRegistry: registry,
-        workspaceDirectory: emptyWorkspace
+        workspaceDirectory: emptyWorkspace,
+        createApiClient: () => fakeApiClient
       });
 
       await handler({

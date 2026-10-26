@@ -19,10 +19,12 @@ import {
   ConfigurationLoader,
   CoreEngine,
   ExecutionContext,
+  OppiabotGitHubClient,
   Trigger
 } from '../../src/core';
 import { RepositoryConfiguration, RepositoryContext } from '../../src/types';
 import {
+  ScheduledEntrypointConfig,
   ScheduledEnvironment,
   ScheduledWorkflowError,
   buildScheduledPayload,
@@ -83,11 +85,7 @@ function createConfig(
     configurationLoader?: ConfigurationLoader;
   } = {}
 ): {
-  config: {
-    engine: CoreEngine;
-    configurationLoader: ConfigurationLoader;
-    environment: ScheduledEnvironment;
-  };
+  config: ScheduledEntrypointConfig;
   contexts: ExecutionContext[];
 } {
   const capturing = createCapturingEngine();
@@ -99,6 +97,11 @@ function createConfig(
     config: {
       engine: overrides.engine || capturing.engine,
       configurationLoader: loader,
+      createGitHubClient: (repository: RepositoryContext) =>
+        new OppiabotGitHubClient(
+          {request: async <TData>() => ({status: 200, data: {} as TData})},
+          repository
+        ),
       environment: environment
     },
     contexts: capturing.contexts
@@ -238,6 +241,19 @@ describe('handleScheduledExecution', () => {
     assert.strictEqual(context.trigger.event, 'schedule');
     assert.strictEqual(context.trigger.action, 'stale-sweep');
     assert.strictEqual(context.trigger.toKey(), 'schedule.stale-sweep');
+  });
+
+  it('passes a GitHub client for the run\'s repository', async () => {
+    const { config, contexts } = createConfig();
+
+    await handleScheduledExecution(config);
+
+    const githubClient = contexts[0].githubClient;
+    assert.ok(githubClient instanceof OppiabotGitHubClient);
+    assert.strictEqual(
+      githubClient.getRepository().getFullName(),
+      'oppia/oppia'
+    );
   });
 
   it('passes the repository built from the environment', async () => {
