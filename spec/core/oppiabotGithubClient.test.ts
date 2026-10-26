@@ -22,6 +22,7 @@ import {
   OppiabotGitHubClient,
   OppiabotGitHubClientError,
   PullRequest,
+  PullRequestDetails,
   PullRequestReview
 } from '../../src/core/oppiabot_github_client';
 import { RepositoryContext } from '../../src/types';
@@ -100,7 +101,7 @@ class FakeGitHubApiClient implements GitHubApiClient {
   ): unknown {
     switch (route) {
       case 'GET /repos/{owner}/{repo}/pulls/{pull_number}':
-        return createPullRequest(Number(parameters.pull_number));
+        return createPullRequestDetails(Number(parameters.pull_number));
       case 'GET /repos/{owner}/{repo}/issues/{issue_number}':
         return createIssue(Number(parameters.issue_number));
       case 'GET /search/issues':
@@ -152,15 +153,24 @@ function createPullRequest(number: number): PullRequest {
     title: `Pull request ${number}`,
     body: 'A pull request body',
     draft: false,
-    merged: false,
     user: {login: 'author'},
-    mergeable: true,
     labels: [{name: 'bug'}],
     assignees: [{login: 'assignee'}],
     requested_reviewers: [{login: 'reviewer'}],
     head: {sha: 'abc123'},
     base: {ref: 'develop'}
   };
+}
+
+/**
+ * Creates a pull request as the single-pull-request endpoint returns it, which
+ * adds the merge state that list responses do not carry.
+ *
+ * @param {number} number - Number of the pull request.
+ * @returns {PullRequestDetails} The pull request under test.
+ */
+function createPullRequestDetails(number: number): PullRequestDetails {
+  return {...createPullRequest(number), merged: false, mergeable: true};
 }
 
 /**

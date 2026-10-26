@@ -38,38 +38,47 @@ export interface GitHubLabel {
 }
 
 /**
- * A GitHub pull request as returned by the GitHub API.
+ * A GitHub pull request as returned by the GitHub API list endpoint.
  *
- * Declares the fields the currently planned plugins read; the runtime object
- * is the full GitHub API response and may carry additional fields, which are
- * added here as later plugins need them.
+ * Only the fields declared here are typed; the runtime object is the full
+ * GitHub response and may carry more. `draft`, `assignees`, and
+ * `requested_reviewers` are optional because GitHub may omit them. The merge
+ * state (`merged`, `mergeable`) is not part of a list response; it is declared
+ * on `PullRequestDetails`, which `getPullRequest` returns.
  */
 export interface PullRequest {
   number: number;
   state: string;
   title: string;
   body: string | null;
-  draft: boolean;
-  merged: boolean;
+  draft?: boolean;
   /**
    * The account that opened the pull request, or null when GitHub cannot
    * associate it with an account.
    */
   user: GitHubUser | null;
-  /**
-   * Whether the pull request can be merged. Null while GitHub is still
-   * computing mergeability.
-   */
-  mergeable: boolean | null;
   labels: GitHubLabel[];
-  assignees: GitHubUser[];
-  requested_reviewers: GitHubUser[];
+  assignees?: GitHubUser[] | null;
+  requested_reviewers?: GitHubUser[] | null;
   head: {
     sha: string;
   };
   base: {
     ref: string;
   };
+}
+
+/**
+ * A single GitHub pull request as returned by `getPullRequest`, which includes
+ * the merge state that GitHub does not return in list responses.
+ */
+export interface PullRequestDetails extends PullRequest {
+  merged: boolean;
+  /**
+   * Whether the pull request can be merged. Null while GitHub is still
+   * computing mergeability; request the pull request again to read the result.
+   */
+  mergeable: boolean | null;
 }
 
 /**
@@ -165,7 +174,7 @@ export interface SearchResult {
 }
 
 /**
- * The GitHub REST routes used by the migrated workflows.
+ * The GitHub REST routes that OppiabotGitHubClient sends requests to.
  */
 const ROUTES = {
   getPullRequest: 'GET /repos/{owner}/{repo}/pulls/{pull_number}',
@@ -200,10 +209,9 @@ export interface GitHubApiResponse<TData> {
 /**
  * The GitHub API client that OppiabotGitHubClient sends requests through.
  *
- * This is the `request` method of an Octokit instance, which has the same
- * signature across the Octokit versions used by the webhook and scheduled
- * runtimes, so a runtime can construct OppiabotGitHubClient with the Octokit
- * version it already uses without an adapter. Tests substitute a fake.
+ * It has the shape of the `request` method of an Octokit instance, so a
+ * runtime provides one by wrapping the Octokit instance it already has. Tests
+ * substitute a fake.
  */
 export interface GitHubApiClient {
   /**
@@ -234,8 +242,8 @@ export interface GitHubApiClient {
  * (`listIssues`, `listPullRequests`, `listPullRequestReviews`, and
  * `listChangedFiles`), to detect a full page and request the next one, and as
  * the requested page size for the single-page search operation
- * (`searchIssuesAndPullRequests`). The value matches the page size the legacy
- * implementations used.
+ * (`searchIssuesAndPullRequests`). 100 is the largest page size GitHub's REST
+ * API accepts.
  */
 const MAX_RESULTS_PER_PAGE = 100;
 
@@ -272,11 +280,14 @@ export class OppiabotGitHubClient {
    * Retrieves a pull request.
    *
    * @param {number} pullRequestNumber - Number of the pull request.
-   * @returns {Promise<PullRequest>} The requested pull request.
+   * @returns {Promise<PullRequestDetails>} The requested pull request,
+   *   including its merge state.
    * @throws {OppiabotGitHubClientError} if the pull request cannot be read.
    */
-  async getPullRequest(pullRequestNumber: number): Promise<PullRequest> {
-    return this.request<PullRequest>(ROUTES.getPullRequest, {
+  async getPullRequest(
+    pullRequestNumber: number
+  ): Promise<PullRequestDetails> {
+    return this.request<PullRequestDetails>(ROUTES.getPullRequest, {
       pull_number: pullRequestNumber
     });
   }
@@ -285,9 +296,9 @@ export class OppiabotGitHubClient {
    * Lists pull requests in the repository.
    *
    * Every page is read because scheduled plugins sweep the repository's open
-   * pull requests (for example the stale pull request sweeper and the
-   * unassigned mergeable pull request allocator), and a single page would
-   * silently omit the remainder.
+   * pull requests (for example the stale pull request sweeper), and a single
+   * page would silently omit the remainder. The results do not include merge
+   * state; call `getPullRequest` for `merged` and `mergeable`.
    *
    * @param {ResourceState} [state] - State of the pull requests to list.
    *   Defaults to 'open'.
