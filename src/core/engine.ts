@@ -17,18 +17,24 @@
  */
 
 import { ExecutionContext } from './execution_context';
-import { OppiabotPlugin, PluginResult } from './plugin';
+import { OppiabotPlugin } from './plugin';
+import { PluginResult } from './plugin';
 import { PluginRegistry } from './pluginRegistry';
 
 /**
- * Runs the plugins that apply to one execution.
+ * The Oppiabot Core Engine runs the plugins that apply to one execution.
  *
- * Call `execute()` with a valid `ExecutionContext`, whose repository
- * configuration is expected to be loaded already. The engine validates the
- * context, asks its `PluginRegistry` for the plugins that match the trigger
- * and are enabled by the configuration, and runs each one. It reports the
- * aggregated results and does not return them to the caller. A plugin that
- * throws does not stop the others; see `execute`.
+ * A webhook handler or a scheduled workflow builds an `ExecutionContext` and
+ * passes it to `execute()`. The engine validates the context, asks the plugin
+ * registry for the registered plugins that both match the context's trigger
+ * and are enabled by the repository configuration, executes those plugins, and
+ * reports their results. The engine coordinates execution; it does not return
+ * a result summary to its caller.
+ *
+ * Webhook and scheduled executions follow the same code path. Their triggers
+ * and payloads reflect the event or scheduled workflow that started each
+ * execution. If a plugin throws, the engine records a failed result for that
+ * plugin and continues with the other matching plugins.
  */
 export class CoreEngine {
   constructor(
@@ -36,22 +42,28 @@ export class CoreEngine {
   ) {}
 
   /**
-   * Executes the plugins applicable to `context`.
+   * Executes the plugins applicable to the current execution.
    *
-   * Resolves the applicable plugins through the registry and awaits each one
-   * in turn. Each resolved plugin contributes exactly one result, which is
-   * reported once all plugins have run.
+   * Resolves the plugins that match `context.trigger` and are enabled by the
+   * repository configuration, then executes each of them and reports the
+   * aggregated results. Produces exactly one result per resolved plugin, in
+   * registration order, for reporting.
    *
-   * @param {ExecutionContext} context - The execution context. Must satisfy
+   * Failures are isolated per plugin: a plugin that throws, or resolves to a
+   * value that is not a `PluginResult`, does not stop the remaining plugins
+   * from running, and does not reject this promise. Its failure is reported as
+   * a result with `success: false`, and the original error's stack trace is
+   * preserved in the report.
+   *
+   * @param {ExecutionContext} context - Execution context carrying the trigger,
+   *   event payload, repository, and repository configuration. Must satisfy
    *   `ExecutionContext.validate()`.
    * @returns {Promise<void>} Resolves after every applicable plugin has run and
-   *   the aggregated results have been reported. A plugin that throws, or
-   *   resolves to a value that is not a `PluginResult`, yields a
-   *   `success: false` result in the report rather than rejecting.
-   * @throws {ExecutionContextValidationError} if `context` is invalid; no
-   *   plugin is run.
-   * @throws {PluginResolutionError} if an enabled plugin's configuration is
-   *   invalid; no plugin is run.
+   *   the aggregated results have been reported.
+   * @throws {ExecutionContextValidationError} if the execution context is
+   *   invalid. No plugin is executed in that case.
+   * @throws {PluginResolutionError} if an enabled plugin's configuration
+   *   cannot be resolved. No plugin is executed in that case.
    */
   async execute(context: ExecutionContext): Promise<void> {
     context.validate();
@@ -102,8 +114,9 @@ export class CoreEngine {
    * Runs one plugin, turning a thrown error or an invalid return value into a
    * failed result.
    *
-   * @param {OppiabotPlugin} plugin - The plugin to run.
-   * @param {ExecutionContext} context - Passed unchanged to the plugin.
+   * @param {OppiabotPlugin} plugin - The plugin to execute.
+   * @param {ExecutionContext} context - The execution context passed unchanged
+   *   to the plugin.
    * @returns {Promise<PluginResult>} The plugin's result, or, if it throws or
    *   resolves to something that is not a `PluginResult`, a failed result
    *   describing what went wrong. Never rejects.
