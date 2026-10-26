@@ -95,6 +95,30 @@ export class ExecutionContext {
   ) {}
 
   /**
+   * Returns a copy of this context for the follow-up run that `request`
+   * asked for.
+   *
+   * Every field other than `deferredRequest` is carried over unchanged, so the
+   * follow-up run sees the same trigger, payload, repository, configuration,
+   * GitHub client, and delivery ID as the run that requested it.
+   *
+   * @param {DeferredExecutionRequest} request - The request the follow-up run
+   *   fulfils.
+   * @returns {ExecutionContext} A copy with `deferredRequest` set to `request`.
+   */
+  withDeferredRequest(request: DeferredExecutionRequest): ExecutionContext {
+    return new ExecutionContext(
+      this.trigger,
+      this.payload,
+      this.repository,
+      this.configuration,
+      this.githubClient,
+      this.deliveryId,
+      request
+    );
+  }
+
+  /**
    * Checks that this execution context can be executed.
    *
    * Requires `trigger` and `repository` to be present and to satisfy their own

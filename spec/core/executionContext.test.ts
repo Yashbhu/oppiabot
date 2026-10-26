@@ -169,6 +169,7 @@ describe('ExecutionContext', () => {
         new RepositoryContext('oppia', 'oppiabot', 'develop'),
         undefined,
         undefined,
+        undefined,
         new DeferredExecutionRequest(180000)
       );
       assert.doesNotThrow(() => context.validate());
@@ -179,6 +180,7 @@ describe('ExecutionContext', () => {
         new Trigger('pull_request_review', 'submitted'),
         {},
         new RepositoryContext('oppia', 'oppiabot', 'develop'),
+        undefined,
         undefined,
         undefined,
         new DeferredExecutionRequest(0)

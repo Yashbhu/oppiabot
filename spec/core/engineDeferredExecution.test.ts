@@ -19,9 +19,11 @@ import {
   DeferredExecutionRequest,
   DeferredExecutionScheduler,
   ExecutionContext,
+  OppiabotGitHubClient,
   PluginRegistry,
   Trigger
 } from '../../src/core';
+import { RepositoryContext } from '../../src/types';
 import {
   createExecutionContext,
   createRepositoryConfiguration,
@@ -65,6 +67,54 @@ class FailingDeferredExecutionScheduler
 }
 
 describe('CoreEngine deferred execution', () => {
+  it('gives the follow-up run the same GitHub client and delivery ID as ' +
+    'the run that requested it', async () => {
+    const { restore } = captureLogs();
+    const contexts: ExecutionContext[] = [];
+    try {
+      const scheduler = new ManualDeferredExecutionScheduler();
+      const registry = new PluginRegistry();
+      registry.register(createStubPlugin(
+        'review-switcher',
+        [new Trigger('pull_request_review', 'submitted')],
+        async (context) => {
+          contexts.push(context);
+          if (context.deferredRequest === undefined) {
+            return {
+              actions: [],
+              message: 'deferring',
+              success: true,
+              deferred: new DeferredExecutionRequest(180000)
+            };
+          }
+          return successfulResult('re-fetched the current pull request');
+        }
+      ));
+      const repository = new RepositoryContext('oppia', 'oppiabot', 'develop');
+      const githubClient = new OppiabotGitHubClient(
+        {request: async <TData>() => ({status: 200, data: {} as TData})},
+        repository
+      );
+      const context = new ExecutionContext(
+        new Trigger('pull_request_review', 'submitted'),
+        {},
+        repository,
+        createRepositoryConfiguration({'review-switcher': { enabled: true }}),
+        githubClient,
+        'delivery-1'
+      );
+
+      await new CoreEngine(registry, scheduler).execute(context);
+      await scheduler.scheduled[0].run();
+
+      assert.strictEqual(contexts.length, 2);
+      assert.strictEqual(contexts[1].githubClient, githubClient);
+      assert.strictEqual(contexts[1].deliveryId, 'delivery-1');
+    } finally {
+      restore();
+    }
+  });
+
   it('schedules a follow-up run for a deferring plugin and attaches the request', async () => {
     const { logs, restore } = captureLogs();
     const contexts: ExecutionContext[] = [];

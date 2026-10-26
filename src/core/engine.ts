@@ -223,14 +223,7 @@ export class CoreEngine {
     console.log(
       `[CoreEngine] Running the deferred execution of plugin '${plugin.name}'.`
     );
-    const deferredContext = new ExecutionContext(
-      context.trigger,
-      context.payload,
-      context.repository,
-      context.configuration,
-      context.deliveryId,
-      request
-    );
+    const deferredContext = context.withDeferredRequest(request);
     const result = await this.executePlugin(plugin, deferredContext);
     const finalResult = await this.scheduleDeferredExecution(
       plugin,
