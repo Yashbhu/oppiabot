@@ -44,6 +44,9 @@ class FakeGitHubApiClient implements GitHubApiClient {
   /** Response returned for the listIssues route, keyed by page number. */
   readonly issuesByPage: Map<number, Issue[]> = new Map();
 
+  /** Fields that replace those of the single-pull-request response. */
+  readonly pullRequestOverrides: Partial<PullRequestDetails> = {};
+
   /** Response returned for the listPullRequests route, keyed by page number. */
   readonly pullRequestsByPage: Map<number, PullRequest[]> = new Map();
 
@@ -101,7 +104,10 @@ class FakeGitHubApiClient implements GitHubApiClient {
   ): unknown {
     switch (route) {
       case 'GET /repos/{owner}/{repo}/pulls/{pull_number}':
-        return createPullRequestDetails(Number(parameters.pull_number));
+        return {
+          ...createPullRequestDetails(Number(parameters.pull_number)),
+          ...this.pullRequestOverrides
+        };
       case 'GET /repos/{owner}/{repo}/issues/{issue_number}':
         return createIssue(Number(parameters.issue_number));
       case 'GET /search/issues':
@@ -225,6 +231,21 @@ describe('OppiabotGitHubClient', () => {
   });
 
   describe('read operations', () => {
+    it('returns mergeable as false when GitHub reports a conflict', async () => {
+      const {client, api} = createClient();
+      api.pullRequestOverrides.mergeable = false;
+      const pullRequest = await client.getPullRequest(42);
+      assert.strictEqual(pullRequest.mergeable, false);
+    });
+
+    it('returns mergeable as null while GitHub is still computing it',
+      async () => {
+        const {client, api} = createClient();
+        api.pullRequestOverrides.mergeable = null;
+        const pullRequest = await client.getPullRequest(42);
+        assert.strictEqual(pullRequest.mergeable, null);
+      });
+
     it('retrieves a pull request scoped to the repository', async () => {
       const {client, api} = createClient();
       const pullRequest = await client.getPullRequest(42);
