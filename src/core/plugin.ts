@@ -107,7 +107,9 @@ export interface OppiabotPlugin extends PluginRegistrationMetadata {
 }
 
 /**
- * Error thrown when a plugin cannot be resolved by the Plugin Registry.
+ * Error thrown by the Plugin Registry when a plugin cannot be registered or
+ * resolved, for example when a plugin is registered under a name that is
+ * already taken.
  */
 export class PluginResolutionError extends Error {
   constructor(message: string) {

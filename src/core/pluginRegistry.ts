@@ -26,8 +26,8 @@ import { Trigger } from './trigger';
  * applicable to a given execution.
  *
  * Plugins are explicitly registered with the registry during application
- * initialization. Each registration provides the plugin metadata, supported
- * trigger keys, configuration schema, and execution handler.
+ * initialization. Each registration provides the plugin's name, supported
+ * triggers, configuration schema, and execution handler.
  */
 export class PluginRegistry {
   private readonly pluginsByName: Map<string, OppiabotPlugin>;
