@@ -17,6 +17,7 @@
  */
 
 import { Trigger } from './trigger';
+import { OppiabotGitHubClient } from './oppiabot_github_client';
 import { RepositoryContext } from '../types/repository';
 import { RepositoryConfiguration } from
   '../types/repository_configuration';
@@ -70,6 +71,12 @@ export class ExecutionContext {
      */
     public readonly configuration?: RepositoryConfiguration,
     /**
+     * The client plugins use to read and change GitHub state for this run.
+     * `undefined` when the entrypoint supplied none; a plugin that performs
+     * GitHub operations must handle that case.
+     */
+    public readonly githubClient?: OppiabotGitHubClient,
+    /**
      * The GitHub webhook delivery ID when this run came from a webhook, and
      * `undefined` when it came from a schedule. Use it to correlate a run with
      * the delivery that started it.
@@ -84,12 +91,14 @@ export class ExecutionContext {
    * `validate()` methods: `Trigger.validate()` rejects an undefined, null, or
    * empty event and a null or empty action, and `RepositoryContext.validate()`
    * rejects an undefined, null, or empty owner, name, or default branch. When
-   * `configuration` is provided its own `validate()` is called too. `payload`
-   * and `deliveryId` carry no constraints here, so they are not inspected.
+   * `configuration` is provided its own `validate()` is called too. `payload`,
+   * `githubClient`, and `deliveryId` carry no constraints here, so they are
+   * not inspected.
    *
-   * @throws {ExecutionContextValidationError} naming the first field that
-   *   fails, with that field's own validation message appended. Returns
-   *   without throwing if every check passes.
+   * @throws {ExecutionContextValidationError} if the trigger, repository,
+   *   or provided configuration is invalid. The error identifies the
+   *   invalid component and includes its validation error message.
+   *   Returns without throwing if every check passes.
    */
   validate(): void {
     if (this.trigger === undefined || this.trigger === null) {
