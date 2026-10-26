@@ -17,7 +17,7 @@
  */
 
 import { Trigger } from './trigger';
-import type { OppiabotGitHubClient } from './oppiabot_github_client';
+import { OppiabotGitHubClient } from './oppiabot_github_client';
 import { RepositoryContext } from '../types/repository';
 import { RepositoryConfiguration } from
   '../types/repository_configuration';
@@ -71,9 +71,9 @@ export class ExecutionContext {
      */
     public readonly configuration?: RepositoryConfiguration,
     /**
-     * The GitHub API abstraction plugins use to perform repository operations,
-     * or `undefined` when the entrypoint did not provide one. Plugins that
-     * perform GitHub operations must handle `undefined`.
+     * The client plugins use to read and change GitHub state for this run.
+     * `undefined` when the entrypoint supplied none; a plugin that performs
+     * GitHub operations must handle that case.
      */
     public readonly githubClient?: OppiabotGitHubClient,
     /**
@@ -95,9 +95,10 @@ export class ExecutionContext {
    * `githubClient`, and `deliveryId` carry no constraints here, so they are
    * not inspected.
    *
-   * @throws {ExecutionContextValidationError} naming the first field that
-   *   fails, with that field's own validation message appended. Returns
-   *   without throwing if every check passes.
+   * @throws {ExecutionContextValidationError} if the trigger, repository,
+   *   or provided configuration is invalid. The error identifies the
+   *   invalid component and includes its validation error message.
+   *   Returns without throwing if every check passes.
    */
   validate(): void {
     if (this.trigger === undefined || this.trigger === null) {
