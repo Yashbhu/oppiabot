@@ -70,6 +70,9 @@ export class Trigger {
    * action. A registered trigger without an action therefore matches all
    * actions for its event.
    *
+   * The comparison is not symmetric: call it on the trigger a plugin
+   * registered and pass the trigger received for the execution.
+   *
    * @param {Trigger} other - The trigger to compare against.
    * @returns {boolean} Whether this trigger matches the other trigger.
    */
