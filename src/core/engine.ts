@@ -111,15 +111,20 @@ export class CoreEngine {
   }
 
   /**
-   * Runs one plugin, turning a thrown error or an invalid return value into a
-   * failed result.
+   * Executes a single plugin, converting any thrown error or invalid return
+   * value into a failed result.
+   *
+   * When a plugin throws an error, its stack trace is included in the returned
+   * `message` when available, so the failure can be traced back to where it
+   * originated.
    *
    * @param {OppiabotPlugin} plugin - The plugin to execute.
    * @param {ExecutionContext} context - The execution context passed unchanged
    *   to the plugin.
-   * @returns {Promise<PluginResult>} The plugin's result, or, if it throws or
-   *   resolves to something that is not a `PluginResult`, a failed result
-   *   describing what went wrong. Never rejects.
+   * @returns {Promise<PluginResult>} The plugin's own result on success, or a
+   *   result with `success: false`, an empty `actions` array, and the failure
+   *   details in `message` if it throws or returns an invalid result. Never
+   *   rejects.
    */
   private async executePlugin(
     plugin: OppiabotPlugin,
