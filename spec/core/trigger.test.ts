@@ -41,7 +41,7 @@ describe('Trigger', () => {
       assert.strictEqual(registered.matches(incoming), true);
     });
 
-    it('matches an action-less registered trigger with any action', () => {
+    it('matches all actions when the registered trigger has no action', () => {
       const registered = new Trigger('pull_request');
       const incoming = new Trigger('pull_request', 'synchronize');
       assert.strictEqual(registered.matches(incoming), true);
