@@ -86,9 +86,10 @@ export class PluginRegistry {
    *
    * A plugin applies when both of these hold:
    *
-   * - The received trigger matches a supported trigger, using
-   *   `Trigger.matches()` (an action-less registered trigger matches every
-   *   action of its event), not a canonical-key comparison.
+   * - The received trigger matches one of the plugin's supported triggers,
+   *   using `Trigger.matches()`. A registered trigger with an action matches
+   *   only that action; a registered trigger without an action matches every
+   *   action for its event.
    * - The repository configuration enables the plugin. A context without a
    *   configuration enables nothing; a plugin that is absent from the
    *   configuration, or configured with `enabled: false`, is not executed.
