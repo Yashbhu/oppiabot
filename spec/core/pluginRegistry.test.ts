@@ -152,7 +152,7 @@ describe('PluginRegistry', () => {
       );
     });
 
-    it('resolves an action-less registered trigger for all actions of its event', () => {
+    it('resolves a trigger without an action for all actions of its event', () => {
       const registry = new PluginRegistry();
       registry.register(
         createStubPlugin('all-pr-checks', [new Trigger('pull_request')])
