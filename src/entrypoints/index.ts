@@ -46,3 +46,21 @@ export {
   getWebhookHandler,
   webhookHandler
 } from './deployedHandler';
+export {
+  GITHUB_REF_NAME_ENV,
+  GITHUB_REPOSITORY_ENV,
+  OPPIABOT_WORKFLOW_ID_ENV,
+  ScheduledEntrypointConfig,
+  ScheduledEnvironment,
+  ScheduledWorkflowError,
+  buildScheduledPayload,
+  extractScheduledRepositoryContext,
+  handleScheduledExecution,
+  resolveScheduledWorkflowId
+} from './githubAction';
+export {
+  GITHUB_WORKSPACE_ENV,
+  ScheduledExecutionOptions,
+  WorkspaceRepositoryFileReader,
+  createScheduledExecution
+} from './githubActionFactory';
