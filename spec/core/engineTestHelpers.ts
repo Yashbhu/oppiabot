@@ -14,11 +14,54 @@
 
 import {
   ExecutionContext,
+  OppiabotGitHubClient,
   OppiabotPlugin,
   PluginResult,
   Trigger
 } from '../../src/core';
-import { ConfigSchema } from '../../src/types';
+import {
+  GitHubApiClient,
+  GitHubApiResponse
+} from '../../src/core/oppiabot_github_client';
+import { ConfigSchema, RepositoryContext } from '../../src/types';
+
+/**
+ * Records the requests that reach the fake GitHub API so tests can assert
+ * whether a mutation was sent or intercepted.
+ */
+export class FakeGitHubApiClient implements GitHubApiClient {
+  /** Requests sent to the fake GitHub API, in order. */
+  readonly requests: Array<{
+    route: string;
+    parameters: Record<string, unknown>;
+  }> = [];
+
+  async request<TData>(
+    route: string,
+    parameters: Record<string, unknown>
+  ): Promise<GitHubApiResponse<TData>> {
+    this.requests.push({route, parameters});
+    return {status: 200, data: {} as TData};
+  }
+}
+
+/**
+ * Creates a GitHub client for an execution.
+ *
+ * @param {FakeGitHubApiClient} api - The fake GitHub API.
+ * @param {boolean} [dryRun] - Whether the client records mutations.
+ * @returns {OppiabotGitHubClient} The client under test.
+ */
+export function createGitHubClient(
+  api: FakeGitHubApiClient,
+  dryRun = false
+): OppiabotGitHubClient {
+  return new OppiabotGitHubClient(
+    api,
+    new RepositoryContext('oppia', 'oppiabot', 'develop'),
+    {dryRun}
+  );
+}
 
 /**
  * Captures console.log output for the duration of one test.

@@ -237,6 +237,40 @@ export interface GitHubApiClient {
 }
 
 /**
+ * A GitHub mutation that a Dry-Run execution would have performed.
+ *
+ * The route and parameters describe the exact request the client would have
+ * sent to GitHub. The parameters include the repository's owner and name, so a
+ * recorded mutation is self-contained and can be compared with the legacy
+ * behavior without consulting the client.
+ */
+export interface RecordedGitHubMutation {
+  /** GitHub REST route of the intended request. */
+  route: string;
+  /** Fully scoped path parameters, query parameters, and request body. */
+  parameters: Record<string, unknown>;
+}
+
+/**
+ * Options that control how OppiabotGitHubClient executes requests.
+ */
+export interface OppiabotGitHubClientOptions {
+  /**
+   * Whether mutations are recorded instead of sent to GitHub. Defaults to
+   * `false`, so a client performs mutations unless Dry-Run is requested.
+   */
+  dryRun?: boolean;
+}
+
+/**
+ * The HTTP status returned by a mutation intercepted in Dry-Run mode.
+ *
+ * Dry-Run treats an intercepted mutation as successful so that a plugin can
+ * continue evaluating the rest of the workflow. No request is sent to GitHub.
+ */
+const DRY_RUN_RESPONSE_STATUS = 200;
+
+/**
  * Maximum number of results GitHub returns per page for most list operations.
  *
  * Used as the page size by the operations that read every matching record
@@ -261,12 +295,27 @@ const MAX_RESULTS_PER_PAGE = 100;
  * HTTP status of the successful response. When a request fails, the injected
  * GitHubApiClient rejects, and the method raises OppiabotGitHubClientError
  * with that rejection as its cause.
+ *
+ * A client constructed with `dryRun: true` still performs reads, so plugins
+ * can evaluate the current repository state, but intercepts every mutation.
+ * An intercepted mutation is logged, recorded in `getRecordedMutations()`,
+ * and reported as successful without contacting GitHub. This lets a migrated
+ * plugin run against live events while the legacy implementation remains the
+ * only one changing repository state.
  */
 export class OppiabotGitHubClient {
+  /** Mutations intercepted in Dry-Run mode, in execution order. */
+  private readonly recordedMutations: RecordedGitHubMutation[] = [];
+  /** Whether mutations are intercepted instead of sent to GitHub. */
+  private readonly dryRun: boolean;
+
   constructor(
     private readonly api: GitHubApiClient,
-    private readonly repository: RepositoryContext
-  ) {}
+    private readonly repository: RepositoryContext,
+    options: OppiabotGitHubClientOptions = {}
+  ) {
+    this.dryRun = options.dryRun ?? false;
+  }
 
   /**
    * Returns the repository this client operates on.
@@ -275,6 +324,53 @@ export class OppiabotGitHubClient {
    */
   getRepository(): RepositoryContext {
     return this.repository;
+  }
+
+  /**
+   * Returns whether this client intercepts mutations.
+   *
+   * @returns {boolean} `true` when mutations are recorded instead of sent to
+   *   GitHub.
+   */
+  isDryRun(): boolean {
+    return this.dryRun;
+  }
+
+  /**
+   * Returns the mutations intercepted by this client.
+   *
+   * The returned array and its parameters are copies, so changing them does
+   * not affect the client. Use it to report the intended actions of a Dry-Run
+   * execution, for example when comparing a migrated plugin with the legacy
+   * implementation.
+   *
+   * @returns {readonly RecordedGitHubMutation[]} The recorded mutations, in
+   *   execution order.
+   */
+  getRecordedMutations(): readonly RecordedGitHubMutation[] {
+    return this.recordedMutations.map((mutation) => ({
+      route: mutation.route,
+      parameters: this.copyParameters(mutation.parameters)
+    }));
+  }
+
+  /**
+   * Returns a client for the same repository and GitHub API that intercepts
+   * mutations.
+   *
+   * The returned client has its own mutation recording, so each plugin can be
+   * given an independent Dry-Run client. There is deliberately no operation
+   * that turns a Dry-Run client back into a live client, so plugin code cannot
+   * opt out of the mode the Core Engine selected.
+   *
+   * @returns {OppiabotGitHubClient} A Dry-Run client.
+   */
+  asDryRun(): OppiabotGitHubClient {
+    return new OppiabotGitHubClient(
+      this.api,
+      this.repository,
+      {dryRun: true}
+    );
   }
 
   /**
@@ -526,17 +622,101 @@ export class OppiabotGitHubClient {
   /**
    * Performs a mutation scoped to the client's repository.
    *
+   * In Dry-Run mode the request is recorded and logged instead of sent, and
+   * the mutation is reported as successful. The plugin therefore observes the
+   * same control flow as a live run without changing repository state.
+   *
    * @param {string} route - GitHub REST route to request.
    * @param {Object} [parameters] - Route parameters and request body.
-   * @returns {Promise<number>} The HTTP status of the successful response.
+   * @returns {Promise<number>} The HTTP status of the successful response, or
+   *   `DRY_RUN_RESPONSE_STATUS` for an intercepted mutation.
    * @throws {OppiabotGitHubClientError} if the request fails.
    */
   private async mutate(
     route: string,
     parameters: Record<string, unknown> = {}
   ): Promise<number> {
+    if (this.dryRun) {
+      this.recordMutation(route, parameters);
+      return DRY_RUN_RESPONSE_STATUS;
+    }
     const response = await this.send(route, parameters);
     return response.status;
+  }
+
+  /**
+   * Records and logs one intended mutation without sending it to GitHub.
+   *
+   * @param {string} route - GitHub REST route of the intended request.
+   * @param {Object} parameters - Route parameters and request body.
+   */
+  private recordMutation(
+    route: string,
+    parameters: Record<string, unknown>
+  ): void {
+    const scopedParameters = this.copyParameters(
+      this.scopedParameters(parameters)
+    );
+    this.recordedMutations.push({
+      route,
+      parameters: scopedParameters
+    });
+    console.log(
+      `[OppiabotGitHubClient] Dry-Run: ${route} ` +
+      JSON.stringify(scopedParameters)
+    );
+  }
+
+  /**
+   * Copies request parameters so a record cannot change after it is made.
+   *
+   * @param {Object} parameters - Route parameters and request body.
+   * @returns {Object} A deep copy of the parameters.
+   */
+  private copyParameters(
+    parameters: Record<string, unknown>
+  ): Record<string, unknown> {
+    const copy: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parameters)) {
+      copy[key] = this.copyParameterValue(value);
+    }
+    return copy;
+  }
+
+  /**
+   * Copies one request parameter, including arrays and plain objects.
+   *
+   * @param {unknown} value - A request parameter value.
+   * @returns {unknown} A copy of the value.
+   */
+  private copyParameterValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.copyParameterValue(entry));
+    }
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return value;
+    }
+    return this.copyParameters(value as Record<string, unknown>);
+  }
+
+  /**
+   * Adds the client's repository to request parameters.
+   *
+   * @param {Object} parameters - Route parameters and request body.
+   * @returns {Object} The parameters with `owner` and `repo` added.
+   */
+  private scopedParameters(
+    parameters: Record<string, unknown>
+  ): Record<string, unknown> {
+    return {
+      owner: this.repository.owner,
+      repo: this.repository.name,
+      ...parameters
+    };
   }
 
   /**
@@ -586,11 +766,10 @@ export class OppiabotGitHubClient {
     parameters: Record<string, unknown>
   ): Promise<GitHubApiResponse<TData>> {
     try {
-      return await this.api.request<TData>(route, {
-        owner: this.repository.owner,
-        repo: this.repository.name,
-        ...parameters
-      });
+      return await this.api.request<TData>(
+        route,
+        this.scopedParameters(parameters)
+      );
     } catch (error) {
       throw new OppiabotGitHubClientError(
         `The GitHub API request to ${route} failed: ` + (

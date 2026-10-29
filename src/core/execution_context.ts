@@ -40,11 +40,12 @@ export type RuntimeEventPayload = Record<string, unknown>;
  * The input to a single Oppiabot execution.
  *
  * An entrypoint (a webhook handler or a scheduled workflow) constructs one
- * instance per triggered run and passes it to `CoreEngine.execute()`, which
- * passes the same instance to every resolved plugin. All fields are readonly,
- * so their properties cannot be reassigned through the typed API. The nested
- * objects they reference are not frozen, so plugins must treat them as
- * read-only and must not mutate them.
+ * instance per triggered run and passes it to `CoreEngine.execute()`. The
+ * engine passes that instance to each resolved plugin, or a copy carrying a
+ * plugin-specific GitHub client. All fields are readonly, so their properties
+ * cannot be reassigned through the typed API. The nested objects they
+ * reference are not frozen, so plugins must treat them as read-only and must
+ * not mutate them.
  */
 export class ExecutionContext {
   constructor(
@@ -75,6 +76,10 @@ export class ExecutionContext {
      * The client plugins use to read and change GitHub state for this run.
      * `undefined` when the entrypoint supplied none; a plugin that performs
      * GitHub operations must handle that case.
+     *
+     * The Core Engine gives each plugin a client whose Dry-Run mode reflects
+     * that plugin's `dry_run` configuration, so a plugin must use this client
+     * rather than constructing its own.
      */
     public readonly githubClient?: OppiabotGitHubClient,
     /**
@@ -115,6 +120,30 @@ export class ExecutionContext {
       this.githubClient,
       this.deliveryId,
       request
+    );
+  }
+
+  /**
+   * Returns a copy of this context with `githubClient` in place of the current
+   * client.
+   *
+   * The Core Engine uses this to give a plugin a client configured for its
+   * Dry-Run mode without changing the context supplied by the entrypoint or the
+   * context another plugin received. All other fields are carried over
+   * unchanged.
+   *
+   * @param {OppiabotGitHubClient} githubClient - The client for the copy.
+   * @returns {ExecutionContext} A copy with the supplied GitHub client.
+   */
+  withGitHubClient(githubClient: OppiabotGitHubClient): ExecutionContext {
+    return new ExecutionContext(
+      this.trigger,
+      this.payload,
+      this.repository,
+      this.configuration,
+      githubClient,
+      this.deliveryId,
+      this.deferredRequest
     );
   }
 

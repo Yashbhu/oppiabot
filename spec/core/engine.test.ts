@@ -29,7 +29,9 @@ import {
 } from './testHelpers';
 import {
   captureLogs,
+  createGitHubClient,
   createStubPlugin,
+  FakeGitHubApiClient,
   successfulResult
 } from './engineTestHelpers';
 
@@ -444,5 +446,163 @@ describe('CoreEngine', () => {
       engine.execute(context),
       (err) => err instanceof ExecutionContextValidationError
     );
+  });
+
+  it('gives a dry-run plugin a client that records mutations', async () => {
+    const {restore} = captureLogs();
+    const api = new FakeGitHubApiClient();
+    let clientWasDryRun = false;
+    let recordedMutations = 0;
+    try {
+      const registry = new PluginRegistry();
+      registry.register(createStubPlugin(
+        'dry-run-plugin',
+        [new Trigger('pull_request', 'opened')],
+        async (context) => {
+          const client = context.githubClient;
+          assert.ok(client !== undefined);
+          clientWasDryRun = client.isDryRun();
+          await client.createComment(42, 'A comment');
+          recordedMutations = client.getRecordedMutations().length;
+          return successfulResult('recorded');
+        }
+      ));
+
+      const engine = new CoreEngine(registry);
+      await engine.execute(
+        createExecutionContext(new Trigger('pull_request', 'opened'), {
+          configuration: createRepositoryConfiguration({
+            'dry-run-plugin': {enabled: true, dry_run: true}
+          }),
+          githubClient: createGitHubClient(api)
+        })
+      );
+
+      assert.strictEqual(clientWasDryRun, true);
+      assert.strictEqual(recordedMutations, 1);
+      assert.deepStrictEqual(api.requests, []);
+    } finally {
+      restore();
+    }
+  });
+
+  it('gives a live plugin a client that performs mutations', async () => {
+    const {restore} = captureLogs();
+    const api = new FakeGitHubApiClient();
+    let clientWasDryRun = true;
+    let recordedMutations = 1;
+    try {
+      const registry = new PluginRegistry();
+      registry.register(createStubPlugin(
+        'live-plugin',
+        [new Trigger('pull_request', 'opened')],
+        async (context) => {
+          const client = context.githubClient;
+          assert.ok(client !== undefined);
+          clientWasDryRun = client.isDryRun();
+          await client.createComment(42, 'A comment');
+          recordedMutations = client.getRecordedMutations().length;
+          return successfulResult('commented');
+        }
+      ));
+
+      const engine = new CoreEngine(registry);
+      await engine.execute(
+        createExecutionContext(new Trigger('pull_request', 'opened'), {
+          configuration: createRepositoryConfiguration({
+            'live-plugin': {enabled: true, dry_run: false}
+          }),
+          githubClient: createGitHubClient(api)
+        })
+      );
+
+      assert.strictEqual(clientWasDryRun, false);
+      assert.strictEqual(recordedMutations, 0);
+      assert.strictEqual(api.requests.length, 1);
+    } finally {
+      restore();
+    }
+  });
+
+  it('applies Dry-Run per plugin within one execution', async () => {
+    const {restore} = captureLogs();
+    const api = new FakeGitHubApiClient();
+    const observedModes: boolean[] = [];
+    try {
+      const registry = new PluginRegistry();
+      registry.register(createStubPlugin(
+        'dry-run-plugin',
+        [new Trigger('pull_request', 'opened')],
+        async (context) => {
+          const client = context.githubClient;
+          assert.ok(client !== undefined);
+          observedModes.push(client.isDryRun());
+          await client.createComment(42, 'A comment');
+          return successfulResult('recorded');
+        }
+      ));
+      registry.register(createStubPlugin(
+        'live-plugin',
+        [new Trigger('pull_request', 'opened')],
+        async (context) => {
+          const client = context.githubClient;
+          assert.ok(client !== undefined);
+          observedModes.push(client.isDryRun());
+          await client.createComment(42, 'A comment');
+          return successfulResult('commented');
+        }
+      ));
+
+      const engine = new CoreEngine(registry);
+      await engine.execute(
+        createExecutionContext(new Trigger('pull_request', 'opened'), {
+          configuration: createRepositoryConfiguration({
+            'dry-run-plugin': {enabled: true, dry_run: true},
+            'live-plugin': {enabled: true, dry_run: false}
+          }),
+          githubClient: createGitHubClient(api)
+        })
+      );
+
+      assert.deepStrictEqual(observedModes, [true, false]);
+      assert.strictEqual(api.requests.length, 1);
+    } finally {
+      restore();
+    }
+  });
+
+  it('keeps every plugin in Dry-Run when the execution client is', async () => {
+    const {restore} = captureLogs();
+    const api = new FakeGitHubApiClient();
+    let clientWasDryRun = false;
+    try {
+      const registry = new PluginRegistry();
+      registry.register(createStubPlugin(
+        'configured-live-plugin',
+        [new Trigger('pull_request', 'opened')],
+        async (context) => {
+          const client = context.githubClient;
+          assert.ok(client !== undefined);
+          clientWasDryRun = client.isDryRun();
+          await client.addLabels(42, ['bug']);
+          return successfulResult('recorded');
+        }
+      ));
+
+      const engine = new CoreEngine(registry);
+      await engine.execute(
+        createExecutionContext(new Trigger('pull_request', 'opened'), {
+          configuration: createRepositoryConfiguration({
+            'configured-live-plugin': {enabled: true, dry_run: false}
+          }),
+          githubClient: createGitHubClient(api, true)
+        })
+      );
+
+      assert.strictEqual(clientWasDryRun, true);
+      assert.deepStrictEqual(api.requests, []);
+    } finally {
+      restore();
+    }
   });
 });
