@@ -19,6 +19,7 @@
 import { Trigger } from './trigger';
 import { ConfigSchema } from '../types/repository_configuration';
 import { ExecutionContext } from './execution_context';
+import { DeferredExecutionRequest } from './deferredExecution';
 
 /**
  * The GitHub operations a plugin performed while handling an execution.
@@ -55,6 +56,14 @@ export interface PluginResult {
   message: string;
   /** Whether plugin execution completed successfully. */
   success: boolean;
+  /**
+   * Set when the plugin wants to continue this work in a later execution
+   * instead of now, typically because it must wait for repository state to
+   * settle and then re-fetch it. The Core Engine schedules a follow-up run of
+   * the plugin after the requested delay and does not hold the current
+   * execution open. Leave unset for work that completes immediately.
+   */
+  deferred?: DeferredExecutionRequest;
 }
 
 /**

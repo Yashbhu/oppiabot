@@ -17,9 +17,14 @@
  */
 
 import { ExecutionContext } from './execution_context';
-import { OppiabotPlugin } from './plugin';
+import { OppiabotPlugin, PluginAction } from './plugin';
 import { PluginResult } from './plugin';
 import { PluginRegistry } from './pluginRegistry';
+import {
+  DeferredExecutionRequest,
+  DeferredExecutionScheduler,
+  TimeoutDeferredExecutionScheduler
+} from './deferredExecution';
 
 /**
  * The Oppiabot Core Engine runs the plugins that apply to one execution.
@@ -34,11 +39,21 @@ import { PluginRegistry } from './pluginRegistry';
  * Webhook and scheduled executions follow the same code path. Their triggers
  * and payloads reflect the event or scheduled workflow that started each
  * execution. If a plugin throws, the engine records a failed result for that
- * plugin and continues with the other matching plugins.
+ * plugin and continues with the other matching plugins. A plugin that needs to
+ * re-evaluate repository state after a delay requests deferral instead of
+ * waiting; the engine schedules the follow-up run and does not hold the
+ * current execution open.
  */
 export class CoreEngine {
   constructor(
-    private readonly pluginRegistry: PluginRegistry
+    private readonly pluginRegistry: PluginRegistry,
+    /**
+     * Runs the follow-up executions that deferred plugins request. Defaults
+     * to an in-process timer; runtimes whose process may be reclaimed before
+     * a delay elapses pass their own scheduler.
+     */
+    private readonly deferredScheduler: DeferredExecutionScheduler =
+      new TimeoutDeferredExecutionScheduler()
   ) {}
 
   /**
@@ -59,7 +74,9 @@ export class CoreEngine {
    *   event payload, repository, and repository configuration. Must satisfy
    *   `ExecutionContext.validate()`.
    * @returns {Promise<void>} Resolves after every applicable plugin has run and
-   *   the aggregated results have been reported.
+   *   the aggregated results have been reported. A plugin that requests
+   *   deferral is scheduled for a follow-up run through the scheduler; this
+   *   method does not await that run.
    * @throws {ExecutionContextValidationError} if the execution context is
    *   invalid. No plugin is executed in that case.
    * @throws {PluginResolutionError} if an enabled plugin's configuration
@@ -71,7 +88,10 @@ export class CoreEngine {
     const plugins = this.pluginRegistry.resolvePlugins(context);
     const results: PluginResult[] = [];
     for (const plugin of plugins) {
-      results.push(await this.executePlugin(plugin, context));
+      const result = await this.executePlugin(plugin, context);
+      results.push(
+        await this.scheduleDeferredExecution(plugin, context, result)
+      );
     }
     this.reportResults(plugins, results);
   }
@@ -144,6 +164,94 @@ export class CoreEngine {
   }
 
   /**
+   * Hands a plugin's deferral request to the scheduler, or passes the result
+   * through when the plugin did not request one.
+   *
+   * A deferral request that fails validation, or that the scheduler refuses,
+   * becomes a failed result attributed to the plugin. The failure is
+   * isolated: it appears in the aggregated report and does not stop the
+   * execution or the other plugins.
+   *
+   * @param {OppiabotPlugin} plugin - The plugin that produced `result`.
+   * @param {ExecutionContext} context - The context of the run that produced
+   *   `result`; the follow-up run receives a copy of it.
+   * @param {PluginResult} result - The plugin's result, which may carry a
+   *   deferral request.
+   * @returns {Promise<PluginResult>} The result to aggregate: `result`
+   *   unchanged when no deferral was requested, otherwise a failed result
+   *   describing the invalid request or the scheduling failure.
+   */
+  private async scheduleDeferredExecution(
+    plugin: OppiabotPlugin,
+    context: ExecutionContext,
+    result: PluginResult
+  ): Promise<PluginResult> {
+    const request = result.deferred;
+    if (request === undefined) {
+      return result;
+    }
+    try {
+      request.validate();
+    } catch (err) {
+      return this.failureResult(
+        'it returned an invalid deferred execution request: ' +
+          (err instanceof Error ? err.message : String(err)),
+        result.actions
+      );
+    }
+    try {
+      await this.deferredScheduler.schedule(request, () =>
+        this.runDeferred(plugin, context, request)
+      );
+    } catch (err) {
+      return this.failureResult(
+        'its deferred execution could not be scheduled: ' + describeError(err),
+        result.actions
+      );
+    }
+    console.log(
+      `[CoreEngine] Plugin '${plugin.name}' deferred for ` +
+        `${request.delayMs}ms.`
+    );
+    return result;
+  }
+
+  /**
+   * Runs one plugin's follow-up execution after its deferral delay elapsed.
+   *
+   * The plugin receives a copy of the original context with the request that
+   * produced this run attached (see `ExecutionContext.deferredRequest`), so
+   * it can re-fetch the current GitHub state instead of trusting the payload
+   * of the original delivery. A plugin that defers again is scheduled once
+   * more, the same way as in the original run.
+   *
+   * @param {OppiabotPlugin} plugin - The plugin that requested deferral.
+   * @param {ExecutionContext} context - The context of the run that requested
+   *   deferral.
+   * @param {DeferredExecutionRequest} request - The validated request.
+   * @returns {Promise<void>} Resolves after the follow-up run has been
+   *   executed and reported. Never rejects: a failed follow-up run is
+   *   reported like any other isolated plugin failure.
+   */
+  private async runDeferred(
+    plugin: OppiabotPlugin,
+    context: ExecutionContext,
+    request: DeferredExecutionRequest
+  ): Promise<void> {
+    console.log(
+      `[CoreEngine] Running the deferred execution of plugin '${plugin.name}'.`
+    );
+    const deferredContext = context.withDeferredRequest(request);
+    const result = await this.executePlugin(plugin, deferredContext);
+    const finalResult = await this.scheduleDeferredExecution(
+      plugin,
+      deferredContext,
+      result
+    );
+    this.reportResults([plugin], [finalResult]);
+  }
+
+  /**
    * Builds a failed result carrying `reason` as its message.
    *
    * The plugin's name is not included here. `reportResults` attaches it when it
@@ -152,11 +260,16 @@ export class CoreEngine {
    *
    * @param {string} reason - Why the plugin failed; a stack trace for a thrown
    *   error, or a description of an invalid return value.
-   * @returns {PluginResult} A result with `success: false` and no actions.
+   * @param {PluginAction[]} [actions] - The operations the plugin performed
+   *   before failing, so they are not lost from the report; none by default.
+   * @returns {PluginResult} A result with `success: false`.
    */
-  private failureResult(reason: string): PluginResult {
+  private failureResult(
+    reason: string,
+    actions: PluginAction[] = []
+  ): PluginResult {
     return {
-      actions: [],
+      actions: actions,
       success: false,
       message: reason,
     };

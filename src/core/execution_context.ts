@@ -21,6 +21,7 @@ import { OppiabotGitHubClient } from './oppiabot_github_client';
 import { RepositoryContext } from '../types/repository';
 import { RepositoryConfiguration } from
   '../types/repository_configuration';
+import { DeferredExecutionRequest } from './deferredExecution';
 
 /**
  * The raw event data for one execution, as received by the entrypoint.
@@ -81,8 +82,41 @@ export class ExecutionContext {
      * `undefined` when it came from a schedule. Use it to correlate a run with
      * the delivery that started it.
      */
-    public readonly deliveryId?: string
+    public readonly deliveryId?: string,
+    /**
+     * The deferral request that produced this run, or `undefined` for a run
+     * an entrypoint started directly. The Core Engine sets it on the
+     * follow-up execution it schedules for a plugin that requested deferral
+     * (see `DeferredExecutionRequest`), which is how the plugin tells an
+     * initial run from a follow-up run: on the follow-up it re-fetches the
+     * current GitHub state instead of trusting the original delivery payload.
+     */
+    public readonly deferredRequest?: DeferredExecutionRequest
   ) {}
+
+  /**
+   * Returns a copy of this context for the follow-up run that `request`
+   * asked for.
+   *
+   * Every field other than `deferredRequest` is carried over unchanged, so the
+   * follow-up run sees the same trigger, payload, repository, configuration,
+   * GitHub client, and delivery ID as the run that requested it.
+   *
+   * @param {DeferredExecutionRequest} request - The request the follow-up run
+   *   fulfils.
+   * @returns {ExecutionContext} A copy with `deferredRequest` set to `request`.
+   */
+  withDeferredRequest(request: DeferredExecutionRequest): ExecutionContext {
+    return new ExecutionContext(
+      this.trigger,
+      this.payload,
+      this.repository,
+      this.configuration,
+      this.githubClient,
+      this.deliveryId,
+      request
+    );
+  }
 
   /**
    * Checks that this execution context can be executed.
@@ -91,9 +125,9 @@ export class ExecutionContext {
    * `validate()` methods: `Trigger.validate()` rejects an undefined, null, or
    * empty event and a null or empty action, and `RepositoryContext.validate()`
    * rejects an undefined, null, or empty owner, name, or default branch. When
-   * `configuration` is provided its own `validate()` is called too. `payload`,
-   * `githubClient`, and `deliveryId` carry no constraints here, so they are
-   * not inspected.
+   * `configuration` is provided its own `validate()` is called too, and the
+   * same applies to `deferredRequest`. `payload`, `githubClient`, and
+   * `deliveryId` carry no constraints here, so they are not inspected.
    *
    * @throws {ExecutionContextValidationError} if the trigger, repository,
    *   or provided configuration is invalid. The error identifies the
@@ -141,6 +175,22 @@ export class ExecutionContext {
         throw new ExecutionContextValidationError(
           'The execution context contains an invalid configuration: ' +
           errorMessage
+        );
+      }
+    }
+    if (
+      this.deferredRequest !== undefined &&
+      this.deferredRequest !== null
+    ) {
+      try {
+        this.deferredRequest.validate();
+      } catch (error) {
+        const errorMessage = (
+          error instanceof Error ? error.message : String(error)
+        );
+        throw new ExecutionContextValidationError(
+          'The execution context contains an invalid deferred execution ' +
+          'request: ' + errorMessage
         );
       }
     }
